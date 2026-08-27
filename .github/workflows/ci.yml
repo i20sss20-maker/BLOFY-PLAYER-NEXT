@@ -1,0 +1,44 @@
+name: NEXT CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Unit tests
+        run: gradle --no-daemon testDebugUnitTest
+      - name: Lint
+        run: gradle --no-daemon lintDebug
+      - name: Build clean release source
+        run: gradle --no-daemon assembleRelease
+      - name: Guard against patch-chain regression
+        run: |
+          set -euo pipefail
+          if find . -type f \( -name 'apply_v*.py' -o -name '*sign-key*.b64' \) -print | grep -q .; then
+            echo 'Forbidden legacy patch/signing material found in NEXT.' >&2
+            exit 1
+          fi
+      - name: Upload unsigned baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLOFY-PLAYER-NEXT-UNSIGNED
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
