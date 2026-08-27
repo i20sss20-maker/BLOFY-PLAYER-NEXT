@@ -51,10 +51,14 @@ public final class CatalogRepository implements AutoCloseable {
     /** Write one server page without blocking UI and invalidate only that playlist cache. */
     public void storePage(String playlistId, List<CatalogItem> items) {
         if (items == null || items.isEmpty()) return;
-        io.execute(() -> {
-            database.replacePage(items);
-            memory.invalidatePlaylist(playlistId);
-        });
+        io.execute(() -> storePageBlocking(playlistId, items));
+    }
+
+    /** Package-private synchronous write for background import workers that must know persistence finished. */
+    void storePageBlocking(String playlistId, List<CatalogItem> items) {
+        if (items == null || items.isEmpty()) return;
+        database.replacePage(items);
+        memory.invalidatePlaylist(playlistId);
     }
 
     public void clearHotCache(String playlistId) {
