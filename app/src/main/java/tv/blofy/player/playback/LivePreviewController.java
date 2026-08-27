@@ -70,7 +70,7 @@ public final class LivePreviewController implements AutoCloseable {
     public synchronized void cancel() {
         generation++;
         debouncer.cancel();
-        core.stop();
+        core.cancel();
     }
 
     private synchronized boolean isCurrent(long token) {
