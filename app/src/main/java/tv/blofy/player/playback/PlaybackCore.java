@@ -8,6 +8,8 @@ import android.view.SurfaceView;
 
 import androidx.media3.common.util.UnstableApi;
 
+import tv.blofy.player.data.CatalogDatabase;
+
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -28,7 +30,7 @@ public final class PlaybackCore implements AutoCloseable {
 
     private final PlaybackCoordinator coordinator = new PlaybackCoordinator();
     private final PlaybackResolver resolver = new PlaybackResolver();
-    private final ServerPlaybackProfile profiles = new ServerPlaybackProfile();
+    private final PersistentPlaybackProfile profiles;
     private final PlaybackEngine media3;
     private final PlaybackEngine vlc;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -42,8 +44,10 @@ public final class PlaybackCore implements AutoCloseable {
     private Attempt activeAttempt;
 
     public PlaybackCore(Context context) {
-        media3 = new Media3PlaybackEngine(context);
-        vlc = new VlcPlaybackEngine(context);
+        Context app = context.getApplicationContext();
+        media3 = new Media3PlaybackEngine(app);
+        vlc = new VlcPlaybackEngine(app);
+        profiles = new PersistentPlaybackProfile(new CatalogDatabase(app));
     }
 
     public synchronized void attach(SurfaceView value) {
@@ -257,6 +261,7 @@ public final class PlaybackCore implements AutoCloseable {
     @Override public void close() {
         cancel();
         timers.shutdownNow();
+        profiles.close();
         main.post(() -> { media3.close(); vlc.close(); });
         coordinator.close();
     }
