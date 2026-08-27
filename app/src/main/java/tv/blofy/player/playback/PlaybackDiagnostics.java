@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import tv.blofy.player.diagnostics.DiagnosticsLog;
+
 public final class PlaybackDiagnostics {
     public static final class Event {
         public final long atMs;
@@ -25,9 +27,11 @@ public final class PlaybackDiagnostics {
     public synchronized void mark(String name) { mark(name, ""); }
 
     public synchronized void mark(String name, String detail) {
-        events.add(new Event(SystemClock.elapsedRealtime() - startedAtMs,
-                name == null ? "" : name,
-                detail == null ? "" : detail));
+        String cleanName = name == null ? "" : name;
+        String cleanDetail = detail == null ? "" : detail;
+        long at = SystemClock.elapsedRealtime() - startedAtMs;
+        events.add(new Event(at, cleanName, cleanDetail));
+        DiagnosticsLog.event("PLAYBACK", cleanName, at + "ms " + cleanDetail);
     }
 
     public synchronized List<Event> snapshot() {
