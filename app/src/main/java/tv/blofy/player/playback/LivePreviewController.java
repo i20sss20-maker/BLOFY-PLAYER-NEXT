@@ -3,10 +3,13 @@ package tv.blofy.player.playback;
 import android.content.Context;
 import android.view.SurfaceView;
 
+import androidx.media3.common.util.UnstableApi;
+
 /**
  * Owns the small Live-TV preview. Focus movement is debounced and every new preview
  * cancels the previous PlaybackCore session so rapid D-pad navigation cannot stack players.
  */
+@UnstableApi
 public final class LivePreviewController implements AutoCloseable {
     public interface Listener {
         void onState(PlaybackSession.State state);
