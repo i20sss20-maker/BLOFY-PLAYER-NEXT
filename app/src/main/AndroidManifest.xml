@@ -18,6 +18,16 @@
         android:usesCleartextTraffic="true">
 
         <activity
+            android:name=".playback.FullscreenPlayerActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name=".live.LiveActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
             android:name=".diagnostics.DiagnosticsActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
