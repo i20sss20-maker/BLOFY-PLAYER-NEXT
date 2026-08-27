@@ -32,14 +32,15 @@ public final class CatalogRepository implements AutoCloseable {
     public void loadPage(String playlistId, String kind, String categoryId,
                          int limit, int offset, Callback callback) {
         if (callback == null) return;
-        List<CatalogItem> hot = memory.get(playlistId, kind, categoryId, limit, offset);
+        String key = CatalogMemoryCache.key(playlistId, kind, categoryId, offset, limit);
+        List<CatalogItem> hot = memory.get(key);
         if (hot != null) callback.onPage(hot, true);
 
         io.execute(() -> {
             try {
                 List<CatalogItem> page = database.page(playlistId, kind, categoryId, limit, offset);
                 if (page == null) page = Collections.emptyList();
-                memory.put(playlistId, kind, categoryId, limit, offset, page);
+                memory.put(key, page);
                 if (hot == null || !sameIds(hot, page)) callback.onPage(page, false);
             } catch (Throwable error) {
                 if (hot == null) callback.onError(error);
