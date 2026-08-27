@@ -10,6 +10,7 @@
     <application
         android:name=".BlofyApplication"
         android:allowBackup="false"
+        android:banner="@drawable/tv_banner"
         android:hardwareAccelerated="true"
         android:label="BLOFY PLAYER"
         android:supportsRtl="false"
