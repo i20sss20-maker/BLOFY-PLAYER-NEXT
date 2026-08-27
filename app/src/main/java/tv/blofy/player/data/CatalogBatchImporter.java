@@ -69,7 +69,7 @@ public final class CatalogBatchImporter implements AutoCloseable {
                 if (!isCurrent(token)) return;
                 List<CatalogItem> items = page == null ? Collections.emptyList() : page.items;
                 if (!items.isEmpty()) {
-                    repository.storePage(playlistId, items);
+                    repository.storePageBlocking(playlistId, items);
                     stored += items.size();
                 }
 
