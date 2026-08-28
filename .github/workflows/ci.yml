@@ -33,7 +33,14 @@ jobs:
         run: |
           set -euo pipefail
           source config/media3-ffmpeg.properties
-          sdkmanager "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          mapfile -t SDKMANAGERS < <(find "${SDK_ROOT}/cmdline-tools" -type f -path '*/bin/sdkmanager' -print | sort -V)
+          if [[ "${#SDKMANAGERS[@]}" -eq 0 ]]; then
+            echo "sdkmanager was not found under ${SDK_ROOT}." >&2
+            exit 1
+          fi
+          "${SDKMANAGERS[-1]}" "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}"
+          echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "${GITHUB_ENV}"
       - name: Build pinned Media3 FFmpeg extension
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         run: scripts/build-media3-ffmpeg.sh "$RUNNER_TEMP"

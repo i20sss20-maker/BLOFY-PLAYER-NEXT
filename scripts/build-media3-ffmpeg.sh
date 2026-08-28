@@ -30,7 +30,7 @@ if [[ "${ANDROID_API}" != "23" || "${ENABLED_DECODERS}" != "ac3,eac3,dca" ]]; th
   exit 1
 fi
 
-readonly SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+readonly SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
 if [[ -z "${SDK_ROOT}" ]]; then
   echo "Set ANDROID_SDK_ROOT (or ANDROID_HOME) before building FFmpeg." >&2
   exit 1
