@@ -80,6 +80,10 @@ jobs:
         run: gradle --no-daemon verifyReleaseFfmpegPackaging
       - name: Verify FFmpeg and ARM-only JNI in APK
         run: scripts/verify-media3-ffmpeg.sh apk app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Build installable side-by-side debug test
+        run: |
+          gradle --no-daemon assembleDebug
+          scripts/verify-media3-ffmpeg.sh apk app/build/outputs/apk/debug/app-debug.apk
       - name: Guard against patch-chain regression
         run: |
           set -euo pipefail
@@ -93,3 +97,10 @@ jobs:
           name: BLOFY-PLAYER-NEXT-UNSIGNED
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
+      - name: Upload installable debug test
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLOFY-PLAYER-NEXT-DEBUG-TEST
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
