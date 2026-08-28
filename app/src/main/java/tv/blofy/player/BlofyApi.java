@@ -136,6 +136,14 @@ public final class BlofyApi {
         return request("POST", path, body);
     }
 
+    public JSONObject patch(String path, JSONObject body) throws Exception {
+        return request("PATCH", path, body);
+    }
+
+    public JSONObject delete(String path) throws Exception {
+        return request("DELETE", path, null);
+    }
+
     public JSONObject getPlayback(String path, Cancellation cancellation) throws Exception {
         return getPlayback(path, cancellation, PLAYBACK_LINK_TIMEOUT_MS);
     }

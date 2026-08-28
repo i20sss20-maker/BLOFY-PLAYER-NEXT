@@ -30,6 +30,8 @@ public interface PlaybackEngine extends AutoCloseable {
     void stop();
     boolean isPlaying();
     long positionMs();
+    long durationMs();
+    boolean seekToMs(long positionMs);
     String name();
 
     @Override void close();

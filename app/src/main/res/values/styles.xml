@@ -1,5 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <style name="Theme.Blofy" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowBackground">@color/blofy_black</item>
+        <item name="android:colorAccent">@color/blofy_purple</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowContentTransitions">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:navigationBarColor">@color/blofy_black</item>
+        <item name="android:statusBarColor">@color/blofy_black</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Theme.Blofy.Player" parent="Theme.Blofy">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
     <style name="Theme.Blofy.Next" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowNoTitle">true</item>

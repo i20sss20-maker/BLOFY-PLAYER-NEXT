@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="blofy_black">#05050C</color>
+    <color name="blofy_surface">#11101E</color>
+    <color name="blofy_purple">#7C2BFF</color>
+    <color name="blofy_purple_light">#BC84FF</color>
+    <color name="blofy_text">#F9F8FC</color>
+</resources>

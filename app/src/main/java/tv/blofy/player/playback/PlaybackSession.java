@@ -6,7 +6,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class PlaybackSession {
-    public enum State { IDLE, RESOLVING, PREPARING, BUFFERING, PLAYING, RECOVERING, FAILED, CANCELLED }
+    public enum State {
+        IDLE, RESOLVING, PREPARING, BUFFERING, PLAYING, RECOVERING, ENDED, FAILED, CANCELLED
+    }
 
     public final long epoch;
     public final PlaybackRequest request;

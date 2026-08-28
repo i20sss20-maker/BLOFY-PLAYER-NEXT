@@ -37,6 +37,15 @@ This repository replaces the accumulated patch-chain architecture with clean sou
 
 ## Delivery order
 
+### Implemented TV experience — NEXT.2
+- original BLOFY purple theme, logo, device/pairing panel and activation QR
+- remote-first Xtream Codes and M3U add/edit/delete/connect flow backed by the BLOFY server
+- staged Live/Movies/Series sync with monotonic 0–100 progress and cancellation
+- partitioned per-playlist cache that reopens immediately when switching servers
+- original tile Home, categories, paging, search, favorites, history and details screens
+- one shared NEXT Live preview/fullscreen session; Movies and Episodes use ID-only fullscreen entry
+- sensitive editor fields excluded from saved state and Autofill; provider artwork is allowlisted before memory or disk
+
 ### Implemented vertical slice — NEXT.1
 - production-compatible device identity and registration preferences
 - explicit `bootstrap?connect=0` playlist hub; no automatic server selection

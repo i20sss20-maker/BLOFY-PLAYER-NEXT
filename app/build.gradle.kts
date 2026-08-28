@@ -46,8 +46,8 @@ android {
         minSdk = 23
         targetSdk = 36
         // NEXT keeps the same package and signer, but uses a higher code than the v340 line.
-        versionCode = 1001001
-        versionName = "2026.08-NEXT.1"
+        versionCode = 1001002
+        versionName = "2026.08-NEXT.2"
         buildConfigField("String", "BLOFY_BASE_URL", quoted(portalUrl.get().trimEnd('/')))
         buildConfigField("String", "BLOFY_REMOTE_CONFIG_KEY_ID", quoted(configuredRemoteConfigKeyId))
         buildConfigField("String", "BLOFY_REMOTE_CONFIG_PUBLIC_KEY_SPKI", quoted(configuredRemoteConfigPublicKey))

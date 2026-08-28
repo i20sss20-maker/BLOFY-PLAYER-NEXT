@@ -37,15 +37,34 @@ final class PortalModels {
         final String serverName;
         final String status;
         final boolean isDefault;
+        // Detail fields are held in memory only while the server-authoritative editor is open.
+        // The backend never returns a password and this model deliberately has no password field.
+        final String serverUrl;
+        final String username;
+        final String url;
 
         Playlist(JSONObject value) {
+            this(value, null);
+        }
+
+        Playlist(JSONObject value, Playlist fallback) {
             JSONObject row = value == null ? new JSONObject() : value;
-            id = clean(row.optString("id", ""));
-            name = clean(row.optString("name", ""));
-            kind = clean(row.optString("kind", "xtream"));
-            serverName = clean(row.optString("serverName", ""));
-            status = clean(row.optString("status", "unknown"));
-            isDefault = row.optBoolean("isDefault", false);
+            id = clean(row.optString("id", fallback == null ? "" : fallback.id));
+            name = clean(row.optString("name", fallback == null ? "" : fallback.name));
+            kind = PlaylistEditorContract.normalizeKind(row.optString(
+                    "kind", fallback == null ? "xtream" : fallback.kind));
+            serverName = clean(row.optString(
+                    "serverName", fallback == null ? "" : fallback.serverName));
+            status = clean(row.optString(
+                    "status", fallback == null ? "unknown" : fallback.status));
+            isDefault = row.has("isDefault")
+                    ? row.optBoolean("isDefault", false)
+                    : fallback != null && fallback.isDefault;
+            serverUrl = clean(row.optString(
+                    "serverUrl", fallback == null ? "" : fallback.serverUrl));
+            username = clean(row.optString(
+                    "username", fallback == null ? "" : fallback.username));
+            url = clean(row.optString("url", fallback == null ? "" : fallback.url));
         }
 
         String displayName() {
@@ -72,6 +91,12 @@ final class PortalModels {
 
     static int revision(JSONObject response) {
         return response == null ? 0 : Math.max(0, response.optInt("revision", 0));
+    }
+
+    static Playlist playlistDetail(JSONObject response, Playlist fallback) {
+        JSONObject row = response == null ? null : response.optJSONObject("playlist");
+        if (row == null) row = response == null ? new JSONObject() : response;
+        return new Playlist(row, fallback);
     }
 
     private static String clean(String value) {

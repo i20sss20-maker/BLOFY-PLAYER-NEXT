@@ -134,6 +134,20 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
         return player == null ? 0 : Math.max(0, player.getCurrentPosition());
     }
 
+    @Override public synchronized long durationMs() {
+        return player == null ? 0 : Math.max(0, player.getDuration());
+    }
+
+    @Override public synchronized boolean seekToMs(long positionMs) {
+        if (player == null) return false;
+        try {
+            player.seekTo(Math.max(0L, positionMs));
+            return true;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
     @Override public String name() { return "media3"; }
 
     @Override public void close() { stop(); }

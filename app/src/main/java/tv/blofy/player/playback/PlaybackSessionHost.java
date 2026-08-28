@@ -43,6 +43,9 @@ public final class PlaybackSessionHost implements AutoCloseable {
     interface Driver {
         void attach(SurfaceView surface);
         void play(PlaybackRequest request, String deviceProfile, PlaybackCore.Listener listener);
+        default long positionMs() { return 0L; }
+        default long durationMs() { return 0L; }
+        default boolean seekToMs(long positionMs) { return false; }
         void cancel();
         void close();
     }
@@ -70,6 +73,11 @@ public final class PlaybackSessionHost implements AutoCloseable {
             core.play(request, deviceProfile, listener);
         }
 
+        @Override public long positionMs() { return core.positionMs(); }
+        @Override public long durationMs() { return core.durationMs(); }
+        @Override public boolean seekToMs(long positionMs) {
+            return core.seekToMs(positionMs);
+        }
         @Override public void cancel() { core.cancel(); }
         @Override public void close() { core.close(); }
     }
@@ -219,18 +227,44 @@ public final class PlaybackSessionHost implements AutoCloseable {
     }
 
     /**
-     * Process-death recovery. It accepts only an unresolved catalog ID and only when this new
-     * process has no active session, so a stale Activity can never replace another channel.
+     * ID-only fullscreen entry/recovery for Live, Movie, Episode, or Preview. The primitive
+     * contract deliberately has no provider URL, host, header, cookie, or authorization input.
+     * It can only begin when this process has no active session, so a stale Activity can never
+     * replace another channel or overlap a one-connection provider session.
      */
     public synchronized long startFullscreenFromIds(
-            Binding binding, SurfaceView surface, PlaybackRequest idOnlyRequest,
+            Binding binding, SurfaceView surface, String playlistId,
+            PlaybackRequest.Kind kind, String streamId, String extension, boolean ultraHd,
             String profile, Observer nextObserver) {
+        String cleanStreamId = clean(streamId);
         if (closed || activeSessionId != 0L || !valid(binding, Role.FULLSCREEN)
-                || idOnlyRequest == null || idOnlyRequest.streamId.isEmpty()
-                || !idOnlyRequest.sourceUrl.isEmpty()) return 0L;
+                || kind == null || cleanStreamId.isEmpty()) return 0L;
+        PlaybackRequest idOnlyRequest = new PlaybackRequest(
+                clean(playlistId), "", kind, cleanStreamId, "", clean(extension),
+                "", "", ultraHd);
         bindLocked(binding, surface, nextObserver);
         startLocked(idOnlyRequest, profile, Mode.FULLSCREEN);
         return activeSessionId;
+    }
+
+    /** Read-only VOD progress capability for the Activity that owns this fullscreen session. */
+    public synchronized long positionMs(Binding binding, long sessionId) {
+        if (!canReadVodProgressLocked(binding, sessionId)) return 0L;
+        return Math.max(0L, driver.positionMs());
+    }
+
+    /** Read-only VOD duration capability for the Activity that owns this fullscreen session. */
+    public synchronized long durationMs(Binding binding, long sessionId) {
+        if (!canReadVodProgressLocked(binding, sessionId)) return 0L;
+        return Math.max(0L, driver.durationMs());
+    }
+
+    /** Seek is accepted only from the current fullscreen VOD owner while playback is ready. */
+    public synchronized boolean seekToMs(Binding binding, long sessionId, long positionMs) {
+        if (!canReadVodProgressLocked(binding, sessionId) || mode != Mode.FULLSCREEN
+                || (state != PlaybackSession.State.BUFFERING
+                && state != PlaybackSession.State.PLAYING)) return false;
+        return driver.seekToMs(Math.max(0L, positionMs));
     }
 
     /**
@@ -350,6 +384,10 @@ public final class PlaybackSessionHost implements AutoCloseable {
                 return;
             }
             state = next;
+            if (next == PlaybackSession.State.ENDED) {
+                retryLiveAfterPreviewTimeout = false;
+                stopGuardLocked(activeSessionId);
+            }
             target = observer;
         }
         if (target != null) target.onState(next);
@@ -413,6 +451,17 @@ public final class PlaybackSessionHost implements AutoCloseable {
     private boolean valid(Binding binding, Role expectedRole) {
         return binding != null && binding.hostIdentity == identity
                 && (expectedRole == null || binding.role == expectedRole);
+    }
+
+    private boolean canReadVodProgressLocked(Binding binding, long sessionId) {
+        if (closed || sessionId <= 0L || sessionId != activeSessionId
+                || !valid(binding, Role.FULLSCREEN) || surfaceOwner != binding
+                || activeRequest == null
+                || (mode != Mode.FULLSCREEN && mode != Mode.RETURNING_TO_PREVIEW)
+                || (state != PlaybackSession.State.BUFFERING
+                && state != PlaybackSession.State.PLAYING)) return false;
+        return activeRequest.kind == PlaybackRequest.Kind.MOVIE
+                || activeRequest.kind == PlaybackRequest.Kind.EPISODE;
     }
 
     private Snapshot snapshotLocked() {

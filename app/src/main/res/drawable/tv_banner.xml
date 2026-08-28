@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="320dp"
-    android:height="180dp"
-    android:viewportWidth="320"
-    android:viewportHeight="180">
-    <path android:fillColor="#160B2E" android:pathData="M0,0h320v180h-320z" />
-    <path android:fillColor="#7C3AED" android:pathData="M0,138h320v42h-320z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M72,55h18v70h-18zM90,55h48c22,0 35,12 35,31c0,12 -6,21 -17,26c13,4 21,15 21,29c0,3 0,6 -1,9h-20c1,-3 1,-6 1,-9c0,-12 -8,-19 -23,-19h-44v-17h42c13,0 21,-6 21,-17c0,-10 -7,-16 -19,-16h-44zM198,55h20v53h31v18h-51z" />
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <size android:width="320dp" android:height="180dp" />
+            <gradient
+                android:angle="0"
+                android:centerColor="#17102B"
+                android:endColor="#38137B"
+                android:startColor="#07070C" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    <item android:width="150dp" android:height="150dp" android:gravity="center">
+        <bitmap android:gravity="fill" android:src="@drawable/blofy_logo" />
+    </item>
+</layer-list>

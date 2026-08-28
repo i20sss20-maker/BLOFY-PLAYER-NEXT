@@ -170,6 +170,19 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
         return player == null ? 0 : Math.max(0, player.getTime());
     }
 
+    @Override public synchronized long durationMs() {
+        return player == null ? 0 : Math.max(0, player.getLength());
+    }
+
+    @Override public synchronized boolean seekToMs(long positionMs) {
+        if (player == null) return false;
+        try {
+            return player.setTime(Math.max(0L, positionMs)) >= 0L;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
     @Override public String name() { return "vlc"; }
 
     @Override public synchronized void close() {

@@ -15,9 +15,10 @@
         android:allowBackup="false"
         android:banner="@drawable/tv_banner"
         android:hardwareAccelerated="true"
-        android:label="BLOFY PLAYER"
+        android:icon="@drawable/blofy_logo"
+        android:label="@string/app_name"
         android:supportsRtl="false"
-        android:theme="@style/Theme.Blofy.Next"
+        android:theme="@style/Theme.Blofy"
         android:usesCleartextTraffic="true">
 
         <service
@@ -29,15 +30,37 @@
         <activity
             android:name=".playback.FullscreenPlayerActivity"
             android:exported="false"
-            android:screenOrientation="sensorLandscape" />
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Blofy.Player" />
 
         <activity
             android:name=".live.LiveActivity"
             android:exported="false"
-            android:screenOrientation="sensorLandscape" />
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Blofy.Player" />
 
         <activity
             android:name=".diagnostics.DiagnosticsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <!-- v340 presentation activities keep their remote-first routing and
+             register that same action with Android's predictive-back dispatcher. -->
+        <activity
+            android:name=".SevenMaxActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name=".DetailsActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 

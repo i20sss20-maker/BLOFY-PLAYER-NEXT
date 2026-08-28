@@ -77,6 +77,33 @@ public final class PlaybackCore implements AutoCloseable {
         vlc.attach(value);
     }
 
+    synchronized long positionMs() {
+        if (closed || activeAttempt == null) return 0L;
+        try {
+            return Math.max(0L, activeAttempt.engine.positionMs());
+        } catch (RuntimeException ignored) {
+            return 0L;
+        }
+    }
+
+    synchronized long durationMs() {
+        if (closed || activeAttempt == null) return 0L;
+        try {
+            return Math.max(0L, activeAttempt.engine.durationMs());
+        } catch (RuntimeException ignored) {
+            return 0L;
+        }
+    }
+
+    synchronized boolean seekToMs(long positionMs) {
+        if (closed || activeAttempt == null || activeAttempt.ended) return false;
+        try {
+            return activeAttempt.engine.seekToMs(Math.max(0L, positionMs));
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
     public void play(PlaybackRequest request, String deviceProfile, Listener ui) {
         final PlaybackRequest configured = request == null
                 ? null : linkResolver.withCachedConfig(request);
@@ -363,6 +390,9 @@ public final class PlaybackCore implements AutoCloseable {
                                     0, true, null));
                         } else {
                             markEnded(session.epoch, route.id, telemetryAttempt);
+                            session.state(PlaybackSession.State.ENDED);
+                            dispatchAttemptState(session.epoch, route.id, telemetryAttempt,
+                                    ui, PlaybackSession.State.ENDED);
                         }
                     }
 
