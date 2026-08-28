@@ -147,6 +147,32 @@ public class PlaybackResolverTest {
                 request.profileKey("tv-box"));
     }
 
+    @Test public void evidenceBackedNoExtensionDirectCandidateIsKeptWithCanonicalFallback() throws Exception {
+        PlaybackRequest unresolved = new PlaybackRequest("playlist", "provider.example",
+                PlaybackRequest.Kind.MOVIE, "77", "", "mp4", "", "", false);
+        List<PlaybackSourceCandidate> candidates = Arrays.asList(
+                new PlaybackSourceCandidate("vod-noext-direct",
+                        "https://provider.example/movie/user/pass/77", "",
+                        PlaybackRoute.Transport.DIRECT, "video/mp4", "native-link-probe"),
+                new PlaybackSourceCandidate("vod-canonical",
+                        "https://provider.example/movie/user/pass/77.mp4", "mp4",
+                        PlaybackRoute.Transport.DIRECT, "video/mp4", "canonical"));
+        PlaybackRequest request = unresolved.withProviderContract("", "", "",
+                "pp_abcdefghijklmnopqrstuvwx", 7,
+                PlaybackConnectionPolicy.UNKNOWN, candidates);
+
+        List<PlaybackRoute> routes = new PlaybackResolver().resolve(request);
+
+        assertEquals(2, routes.size());
+        assertEquals("vod-noext-direct:media3", routes.get(0).id);
+        assertEquals("https://provider.example/movie/user/pass/77", routes.get(0).url);
+        assertEquals(PlaybackRoute.Transport.DIRECT, routes.get(0).transport);
+        assertEquals("vod-canonical:media3", routes.get(1).id);
+        assertEquals("https://provider.example/movie/user/pass/77.mp4", routes.get(1).url);
+        assertEquals("pp_abcdefghijklmnopqrstuvwx|revision=7|vod|default",
+                request.profileKey("default"));
+    }
+
     @Test public void profileRevisionSeparatesLearnedRoutes() {
         PlaybackRequest unresolved = new PlaybackRequest("playlist", "", PlaybackRequest.Kind.LIVE,
                 "42", "", "ts", "", "", false);
