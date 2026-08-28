@@ -86,6 +86,7 @@ export ANDROID_SDK_ROOT="${SDK_ROOT}"
 export ANDROID_NDK_HOME="${NDK_PATH}"
 export PATH="${CMAKE_PATH}:${PATH}"
 "${MEDIA3_ROOT}/gradlew" \
+  --project-dir "${MEDIA3_ROOT}" \
   --no-daemon \
   --stacktrace \
   :lib-decoder-ffmpeg:assembleRelease
