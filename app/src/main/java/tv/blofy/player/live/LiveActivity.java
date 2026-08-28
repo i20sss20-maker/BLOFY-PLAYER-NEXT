@@ -43,20 +43,24 @@ public final class LiveActivity extends Activity implements LiveScreenController
     private ListView list;
     private SurfaceView previewSurface;
     private TextView previewState;
-    private boolean rendering;
+    private boolean fullscreenOpening;
+    private int uiFocusedIndex = -1;
+    private int pendingRestoredFocus = -1;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        if (state != null) pendingRestoredFocus = state.getInt("focused_index", -1);
         setContentView(buildUi());
 
         repository = new CatalogRepository(new CatalogDatabase(getApplicationContext()), new CatalogMemoryCache(18));
         preview = new LivePreviewController(getApplicationContext());
         preview.attach(previewSurface);
         LiveScreenController.Config config = new LiveScreenController.Config(
-                extra("playlist_id"), extra("provider_host"), extra("category_id"),
-                extra("user_agent"), extra("referer"), defaultExtra("device_profile", "default"), 80);
+                extra("playlist_id"), "", extra("category_id"),
+                "", "", defaultExtra("device_profile", "default"), 80);
         controller = new LiveScreenController(repository, preview, config, this);
-        controller.start();
+        controller.start(pendingRestoredFocus);
+        pendingRestoredFocus = -1;
     }
 
     private View buildUi() {
@@ -71,16 +75,22 @@ public final class LiveActivity extends Activity implements LiveScreenController
         adapter = new ChannelAdapter();
         list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, position, id) -> {
+            if (fullscreenOpening || controller == null) return;
             controller.restoreFocus(position);
             controller.openFocused(SystemClock.elapsedRealtime());
         });
         list.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() != KeyEvent.ACTION_DOWN || controller == null) return false;
+            if (controller == null) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    controller.openFocused(event.getEventTime());
+                }
+                // Always consume OK down/up/repeats so ListView cannot emit a second click.
+                return true;
+            }
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return controller.move(-1);
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return controller.move(1);
-            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
-                return controller.openFocused(event.getEventTime());
-            }
             return false;
         });
         root.addView(list, new LinearLayout.LayoutParams(0, -1, 0.38f));
@@ -100,16 +110,26 @@ public final class LiveActivity extends Activity implements LiveScreenController
 
     @Override public void onItems(List<CatalogItem> next, int focusedIndex, boolean loadingMore) {
         runOnUiThread(() -> {
-            rendering = true;
             items.clear();
             if (next != null) items.addAll(next);
+            uiFocusedIndex = focusedIndex;
             adapter.notifyDataSetChanged();
             if (focusedIndex >= 0 && focusedIndex < items.size()) {
                 list.setSelection(focusedIndex);
                 list.setItemChecked(focusedIndex, true);
             }
             if (loadingMore && items.isEmpty()) previewState.setText("جاري تحميل القنوات…");
-            rendering = false;
+        });
+    }
+
+    @Override public void onFocusChanged(int focusedIndex) {
+        runOnUiThread(() -> {
+            int previous = uiFocusedIndex;
+            uiFocusedIndex = focusedIndex;
+            list.setItemChecked(focusedIndex, true);
+            list.setSelection(focusedIndex);
+            refreshVisibleRow(previous);
+            refreshVisibleRow(focusedIndex);
         });
     }
 
@@ -134,18 +154,23 @@ public final class LiveActivity extends Activity implements LiveScreenController
         });
     }
 
-    @Override public void onOpenFullscreen(PlaybackRequest request) {
+    @Override public void onOpenFullscreen(PlaybackRequest request, long handoffId) {
+        if (fullscreenOpening) return;
+        fullscreenOpening = true;
         Intent intent = new Intent(this, FullscreenPlayerActivity.class);
+        intent.putExtra(FullscreenPlayerActivity.EXTRA_HANDOFF_ID, handoffId);
         intent.putExtra(FullscreenPlayerActivity.EXTRA_PLAYLIST_ID, request.playlistId);
-        intent.putExtra(FullscreenPlayerActivity.EXTRA_PROVIDER_HOST, request.providerHost);
         intent.putExtra(FullscreenPlayerActivity.EXTRA_STREAM_ID, request.streamId);
-        intent.putExtra(FullscreenPlayerActivity.EXTRA_STREAM_URL, request.sourceUrl);
+        // ID-only recovery data. Provider host/source URLs and headers never enter an Intent.
         intent.putExtra(FullscreenPlayerActivity.EXTRA_EXTENSION, request.extension);
-        intent.putExtra(FullscreenPlayerActivity.EXTRA_USER_AGENT, request.userAgent);
-        intent.putExtra(FullscreenPlayerActivity.EXTRA_REFERER, request.referer);
         intent.putExtra(FullscreenPlayerActivity.EXTRA_DEVICE_PROFILE, defaultExtra("device_profile", "default"));
         intent.putExtra(FullscreenPlayerActivity.EXTRA_ULTRA_HD, request.ultraHd);
-        startActivity(intent);
+        try {
+            startActivity(intent);
+        } catch (RuntimeException failure) {
+            fullscreenOpening = false;
+            if (controller != null) controller.resumePreview();
+        }
     }
 
     @Override public void onError(Throwable error) {
@@ -157,7 +182,28 @@ public final class LiveActivity extends Activity implements LiveScreenController
 
     @Override protected void onResume() {
         super.onResume();
+        fullscreenOpening = false;
         if (list != null) list.requestFocus();
+        if (controller != null) controller.resumePreview();
+    }
+
+    @Override protected void onPause() {
+        // Home and Activity transitions begin at onPause; invalidate delayed
+        // page/focus work before this screen can become hidden.
+        if (controller != null) controller.suspendPreview();
+        super.onPause();
+    }
+
+    @Override protected void onStop() {
+        if (preview != null) preview.detach(isChangingConfigurations());
+        super.onStop();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        if (controller != null) {
+            state.putInt("focused_index", controller.restorableFocusIndex());
+        }
+        super.onSaveInstanceState(state);
     }
 
     @Override protected void onDestroy() {
@@ -182,9 +228,17 @@ public final class LiveActivity extends Activity implements LiveScreenController
             row.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
             row.setPadding(dp(18), dp(10), dp(18), dp(10));
             row.setFocusable(false);
-            row.setBackgroundColor(list.isItemChecked(position) ? Color.rgb(72, 42, 120) : Color.TRANSPARENT);
+            row.setBackgroundColor(position == uiFocusedIndex
+                    ? Color.rgb(72, 42, 120) : Color.TRANSPARENT);
             return row;
         }
+    }
+
+    private void refreshVisibleRow(int position) {
+        if (position < list.getFirstVisiblePosition() || position > list.getLastVisiblePosition()) return;
+        View row = list.getChildAt(position - list.getFirstVisiblePosition());
+        if (row != null) row.setBackgroundColor(position == uiFocusedIndex
+                ? Color.rgb(72, 42, 120) : Color.TRANSPARENT);
     }
 
     private String extra(String key) {

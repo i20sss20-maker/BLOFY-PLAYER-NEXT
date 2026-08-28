@@ -10,6 +10,8 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 
@@ -49,7 +51,9 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
 
             DefaultMediaSourceFactory sourceFactory = new DefaultMediaSourceFactory(context)
                     .setDataSourceFactory(http);
-            player = new ExoPlayer.Builder(context)
+            DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(context)
+                    .setExtensionRendererMode(extensionRendererMode());
+            player = new ExoPlayer.Builder(context, renderersFactory)
                     .setMediaSourceFactory(sourceFactory)
                     .build();
             player.addListener(new Player.Listener() {
@@ -109,6 +113,11 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
 
     @Override public void close() { stop(); }
 
+    /** Package-visible so the decoder preference remains covered by a JVM regression test. */
+    static int extensionRendererMode() {
+        return DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER;
+    }
+
     private static String mime(PlaybackRoute.Transport transport) {
         if (transport == PlaybackRoute.Transport.HLS) return MimeTypes.APPLICATION_M3U8;
         if (transport == PlaybackRoute.Transport.TS) return MimeTypes.VIDEO_MP2T;
@@ -116,6 +125,10 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
     }
 
     private static PlaybackFailure map(PlaybackException error) {
+        HttpDataSource.InvalidResponseCodeException http = httpFailure(error);
+        if (http != null) {
+            return PlaybackFailureClassifier.http(http.responseCode, "MEDIA3", http);
+        }
         int code = error == null ? 0 : error.errorCode;
         String message = error == null ? "player error" : error.getMessage();
         PlaybackFailure.Type type = PlaybackFailure.Type.PLAYER;
@@ -136,5 +149,16 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
             diagnostic = "MEDIA3-CONTAINER";
         }
         return new PlaybackFailure(type, diagnostic, message, 0, true, error);
+    }
+
+    private static HttpDataSource.InvalidResponseCodeException httpFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof HttpDataSource.InvalidResponseCodeException) {
+                return (HttpDataSource.InvalidResponseCodeException) current;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 }

@@ -4,12 +4,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * Single catalog access layer. UI receives memory cache immediately when possible,
  * then SQLite fallback, while network refreshes are written in the background.
  */
-public final class CatalogRepository implements AutoCloseable {
+public final class CatalogRepository implements AutoCloseable, CatalogImportStore {
     public interface Callback {
         void onPage(List<CatalogItem> items, boolean fromMemory);
         void onError(Throwable error);
@@ -18,6 +19,8 @@ public final class CatalogRepository implements AutoCloseable {
     private final CatalogDatabase database;
     private final CatalogMemoryCache memory;
     private final ExecutorService io;
+    private final Object databaseLock = new Object();
+    private volatile boolean closed;
 
     public CatalogRepository(CatalogDatabase database, CatalogMemoryCache memory) {
         this.database = database;
@@ -31,38 +34,76 @@ public final class CatalogRepository implements AutoCloseable {
 
     public void loadPage(String playlistId, String kind, String categoryId,
                          int limit, int offset, Callback callback) {
-        if (callback == null) return;
+        if (callback == null || closed) return;
         String key = CatalogMemoryCache.key(playlistId, kind, categoryId, offset, limit);
         List<CatalogItem> hot = memory.get(key);
-        if (hot != null) callback.onPage(hot, true);
+        if (hot != null && !closed) callback.onPage(hot, true);
 
-        io.execute(() -> {
+        enqueue(() -> {
             try {
-                List<CatalogItem> page = database.page(playlistId, kind, categoryId, limit, offset);
+                List<CatalogItem> page;
+                synchronized (databaseLock) {
+                    if (closed) return;
+                    page = database.page(playlistId, kind, categoryId, limit, offset);
+                }
                 if (page == null) page = Collections.emptyList();
+                if (closed) return;
                 memory.put(key, page);
                 if (hot == null || !sameIds(hot, page)) callback.onPage(page, false);
             } catch (Throwable error) {
-                if (hot == null) callback.onError(error);
+                if (!closed && hot == null) callback.onError(error);
             }
         });
     }
 
-    /** Write one server page without blocking UI and invalidate only that playlist cache. */
-    public void storePage(String playlistId, List<CatalogItem> items) {
-        if (items == null || items.isEmpty()) return;
-        io.execute(() -> storePageBlocking(playlistId, items));
+    @Override public void beginImport(long importGeneration, String playlistId, String kind) {
+        synchronized (databaseLock) {
+            ensureOpen();
+            database.beginStagedImport(importGeneration, playlistId, kind);
+        }
     }
 
-    /** Package-private synchronous write for background import workers that must know persistence finished. */
-    void storePageBlocking(String playlistId, List<CatalogItem> items) {
-        if (items == null || items.isEmpty()) return;
-        database.replacePage(items);
-        memory.invalidatePlaylist(playlistId);
+    @Override public int stagePage(long importGeneration, String playlistId, String kind,
+                                   List<CatalogItem> items) {
+        synchronized (databaseLock) {
+            ensureOpen();
+            return database.stagePage(importGeneration, playlistId, kind, items);
+        }
     }
 
-    public void clearHotCache(String playlistId) {
-        memory.invalidatePlaylist(playlistId);
+    @Override public int commitImport(long importGeneration, String playlistId, String kind,
+                                      int expectedItems) {
+        int committed;
+        synchronized (databaseLock) {
+            ensureOpen();
+            committed = database.commitStagedImport(
+                    importGeneration, playlistId, kind, expectedItems);
+        }
+        if (committed > 0 && !closed) memory.invalidatePlaylist(playlistId);
+        return committed;
+    }
+
+    @Override public void abortImport(long importGeneration, String playlistId, String kind) {
+        synchronized (databaseLock) {
+            if (closed) return;
+            database.abortStagedImport(importGeneration, playlistId, kind);
+        }
+    }
+
+    private void ensureOpen() {
+        if (closed) throw new IllegalStateException("catalog repository is closed");
+    }
+
+    private synchronized boolean enqueue(Runnable task) {
+        if (closed) return false;
+        try {
+            // submit captures an unexpected task exception instead of forwarding
+            // it to Android's process-wide uncaught-exception handler.
+            io.submit(task);
+            return true;
+        } catch (RejectedExecutionException ignored) {
+            return false;
+        }
     }
 
     private static boolean sameIds(List<CatalogItem> a, List<CatalogItem> b) {
@@ -75,6 +116,26 @@ public final class CatalogRepository implements AutoCloseable {
     }
 
     @Override public void close() {
-        io.shutdownNow();
+        boolean closeDirectly = false;
+        synchronized (this) {
+            if (closed) return;
+            closed = true;
+            try {
+                // Queue closure after every accepted repository operation.
+                io.submit(() -> {
+                    synchronized (databaseLock) {
+                        database.close();
+                    }
+                });
+            } catch (RejectedExecutionException ignored) {
+                closeDirectly = true;
+            }
+            io.shutdown();
+        }
+        if (closeDirectly) {
+            synchronized (databaseLock) {
+                database.close();
+            }
+        }
     }
 }

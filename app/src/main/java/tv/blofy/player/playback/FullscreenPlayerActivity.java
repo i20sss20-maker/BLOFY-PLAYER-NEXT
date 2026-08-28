@@ -1,39 +1,55 @@
 package tv.blofy.player.playback;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.SurfaceView;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 import androidx.media3.common.util.UnstableApi;
+
+import java.util.Locale;
+
+import tv.blofy.player.BlofyApplication;
 
 /** Fullscreen playback shell backed by the same bounded PlaybackCore used by preview. */
 @UnstableApi
 public final class FullscreenPlayerActivity extends Activity {
+    public static final String EXTRA_HANDOFF_ID = "handoff_id";
     public static final String EXTRA_PLAYLIST_ID = "playlist_id";
-    public static final String EXTRA_PROVIDER_HOST = "provider_host";
     public static final String EXTRA_STREAM_ID = "stream_id";
-    public static final String EXTRA_STREAM_URL = "stream_url";
     public static final String EXTRA_EXTENSION = "extension";
-    public static final String EXTRA_USER_AGENT = "user_agent";
-    public static final String EXTRA_REFERER = "referer";
     public static final String EXTRA_DEVICE_PROFILE = "device_profile";
     public static final String EXTRA_ULTRA_HD = "ultra_hd";
 
-    private PlaybackCore core;
+    private static final String STATE_SESSION_ID = "playback_session_id";
+
+    private PlaybackSessionHost host;
+    private PlaybackSessionHost.Binding binding;
+    private SurfaceView surface;
+    private long sessionId;
     private TextView status;
+    private OnBackInvokedCallback backCallback;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        if (state != null) sessionId = state.getLong(STATE_SESSION_ID, 0L);
+        host = ((BlofyApplication) getApplication()).playback();
+        binding = host.newFullscreenBinding();
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
-        SurfaceView surface = new SurfaceView(this);
+        surface = new SurfaceView(this);
         root.addView(surface, new FrameLayout.LayoutParams(-1, -1));
 
         status = new TextView(this);
@@ -44,23 +60,39 @@ public final class FullscreenPlayerActivity extends Activity {
         FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(dp(360), dp(72), Gravity.CENTER);
         root.addView(status, statusParams);
         setContentView(root);
-
-        core = new PlaybackCore(getApplicationContext());
-        core.attach(surface);
-        playFromIntent();
+        if (Build.VERSION.SDK_INT >= 33) {
+            backCallback = this::finishForReturn;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        }
     }
 
     private void playFromIntent() {
-        String url = text(EXTRA_STREAM_URL);
-        if (url.isEmpty()) {
+        String streamId = text(EXTRA_STREAM_ID);
+        if (streamId.isEmpty()) {
             status.setText("رابط التشغيل غير متوفر");
             return;
         }
+        PlaybackSessionHost.Observer observer = observer();
+        long requestedHandoff = sessionId > 0L ? sessionId
+                : getIntent().getLongExtra(EXTRA_HANDOFF_ID, 0L);
+        if (host.claimFullscreen(requestedHandoff, binding, surface, observer)) {
+            sessionId = requestedHandoff;
+            return;
+        }
+
+        // Process-death fallback is catalog-ID-only. No provider URL/host/header is restored.
         PlaybackRequest request = new PlaybackRequest(
-                text(EXTRA_PLAYLIST_ID), text(EXTRA_PROVIDER_HOST), PlaybackRequest.Kind.LIVE,
-                text(EXTRA_STREAM_ID), url, text(EXTRA_EXTENSION), text(EXTRA_USER_AGENT),
-                text(EXTRA_REFERER), getIntent().getBooleanExtra(EXTRA_ULTRA_HD, false));
-        core.play(request, defaultText(EXTRA_DEVICE_PROFILE, "default"), new PlaybackCore.Listener() {
+                text(EXTRA_PLAYLIST_ID), "", PlaybackRequest.Kind.LIVE,
+                streamId, "", text(EXTRA_EXTENSION), "", "",
+                getIntent().getBooleanExtra(EXTRA_ULTRA_HD, false));
+        sessionId = host.startFullscreenFromIds(binding, surface, request,
+                defaultText(EXTRA_DEVICE_PROFILE, "default"), observer);
+        if (sessionId <= 0L) status.setText("انتهت جلسة التشغيل");
+    }
+
+    private PlaybackSessionHost.Observer observer() {
+        return new PlaybackSessionHost.Observer() {
             @Override public void onState(PlaybackSession.State state) {
                 if (status == null) return;
                 switch (state) {
@@ -78,18 +110,57 @@ public final class FullscreenPlayerActivity extends Activity {
                 if (status != null) status.setVisibility(TextView.GONE);
             }
 
-            @Override public void onFinalFailure(PlaybackFailure failure, String diagnostics) {
+            @Override public void onFailure(PlaybackFailure failure, String diagnostics) {
                 if (status != null) {
-                    status.setText("تعذر التشغيل\n" + failure.code);
+                    status.setText(String.format(Locale.getDefault(),
+                            "تعذر التشغيل%n%s", failure.code));
                     status.setVisibility(TextView.VISIBLE);
                 }
             }
-        });
+        };
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        playFromIntent();
+    }
+
+    @Override protected void onStop() {
+        if (host != null && binding != null) {
+            PlaybackSessionHost.ExitReason reason = isChangingConfigurations()
+                    ? PlaybackSessionHost.ExitReason.CONFIGURATION
+                    : isFinishing()
+                    ? PlaybackSessionHost.ExitReason.RETURNING_TO_PREVIEW
+                    : PlaybackSessionHost.ExitReason.BACKGROUND;
+            host.release(binding, reason);
+        }
+        super.onStop();
+    }
+
+    @SuppressLint("GestureBackNavigation")
+    @SuppressWarnings("deprecation")
+    @Override public void onBackPressed() {
+        finishForReturn();
+    }
+
+    private void finishForReturn() {
+        if (host != null && binding != null) host.beginReturn(sessionId, binding);
+        finish();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putLong(STATE_SESSION_ID, sessionId);
+        super.onSaveInstanceState(state);
     }
 
     @Override protected void onDestroy() {
-        if (core != null) core.close();
-        core = null;
+        if (Build.VERSION.SDK_INT >= 33 && backCallback != null) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+        }
+        backCallback = null;
+        binding = null;
+        host = null;
+        surface = null;
         super.onDestroy();
     }
 

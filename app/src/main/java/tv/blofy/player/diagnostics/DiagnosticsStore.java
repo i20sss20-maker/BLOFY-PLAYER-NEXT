@@ -30,12 +30,17 @@ public final class DiagnosticsStore {
 
     public synchronized void clear() { prefs.edit().remove(KEY).apply(); }
 
-    private static String sanitize(String value) {
+    static String sanitize(String value) {
         if (value == null) return "";
         String out = value.trim();
+        out = out.replaceAll("(?i)(/api/native-play\\?)[^\\s|]+", "$1***");
+        out = out.replaceAll("(?i)(https?://)[^/@\\s]+:[^/@\\s]+@", "$1***:***@");
         out = out.replaceAll("(?i)(password|passwd|pwd)=([^&\\s]+)", "$1=***");
         out = out.replaceAll("(?i)(username|user)=([^&\\s]+)", "$1=***");
-        out = out.replaceAll("(?i)(authorization:)\\s*[^\\s]+", "$1 ***");
+        out = out.replaceAll("(?i)([?&](?:pair_token|token|device_key|u|s)=)[^&\\s|]+", "$1***");
+        out = out.replaceAll("(?i)(\"?(?:deviceKey|password|pairToken|pairingCode)\"?\\s*[:=]\\s*\"?)[^\",}\\s]+", "$1***");
+        out = out.replaceAll("(?i)\\b(authorization|proxy-authorization|cookie|set-cookie|x-blofy-device-key)\\s*:\\s*[^\\r\\n|]+", "$1: ***");
+        out = out.replaceAll("(?i)/(live|movie|series)/[^/\\s?]+/[^/\\s?]+/", "/$1/***/***/");
         return out;
     }
 }

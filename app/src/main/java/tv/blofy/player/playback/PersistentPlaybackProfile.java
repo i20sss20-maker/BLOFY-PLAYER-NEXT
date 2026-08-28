@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 /** Adaptive route ranking backed by SQLite without blocking the UI/playback caller. */
 public final class PersistentPlaybackProfile implements AutoCloseable {
@@ -33,14 +34,20 @@ public final class PersistentPlaybackProfile implements AutoCloseable {
         t.setDaemon(true);
         return t;
     });
+    private boolean closed;
 
     public PersistentPlaybackProfile(CatalogDatabase database) {
         this.database = database;
     }
 
     public synchronized List<PlaybackRoute> rank(String profileKey, List<PlaybackRoute> routes) {
+        if (closed) return new ArrayList<>(routes);
         requestLoad(profileKey);
         List<PlaybackRoute> out = new ArrayList<>(routes);
+        if (out.size() <= 1) return out;
+        // Stable route IDs include both signed candidate and engine. Once a route
+        // has real first-frame history it may become primary for this provider
+        // profile revision (for example HLS+Media3 or TS+VLC).
         out.sort(new Comparator<PlaybackRoute>() {
             @Override public int compare(PlaybackRoute left, PlaybackRoute right) {
                 return Double.compare(score(profileKey, right.id).value(), score(profileKey, left.id).value());
@@ -51,48 +58,80 @@ public final class PersistentPlaybackProfile implements AutoCloseable {
 
     public void recordSuccess(String profileKey, String routeId, long firstFrameMs) {
         synchronized (this) {
+            if (closed) return;
             requestLoad(profileKey);
             Score s = score(profileKey, routeId);
             s.success++;
             s.totalFirstFrameMs += Math.max(0L, firstFrameMs);
+            enqueueLocked(() -> database.saveRouteResult(
+                    profileKey, routeId, true, firstFrameMs));
         }
-        io.execute(() -> database.saveRouteResult(profileKey, routeId, true, firstFrameMs));
     }
 
     public void recordFailure(String profileKey, String routeId) {
         synchronized (this) {
+            if (closed) return;
             requestLoad(profileKey);
             score(profileKey, routeId).failure++;
+            enqueueLocked(() -> database.saveRouteResult(
+                    profileKey, routeId, false, 0L));
         }
-        io.execute(() -> database.saveRouteResult(profileKey, routeId, false, 0L));
     }
 
     private synchronized void requestLoad(String profileKey) {
+        if (closed) return;
         String key = clean(profileKey);
         if (loaded.containsKey(key) || loading.contains(key)) return;
         loading.add(key);
-        io.execute(() -> {
+        if (!enqueueLocked(() -> {
             Map<String, Score> disk = new HashMap<>();
-            for (CatalogDatabase.RouteScore stored : database.loadRouteScores(key)) {
-                Score score = new Score();
-                score.success = stored.successCount;
-                score.failure = stored.failureCount;
-                score.totalFirstFrameMs = stored.totalFirstFrameMs;
-                disk.put(stored.routeId, score);
+            boolean loadedFromDisk = false;
+            try {
+                for (CatalogDatabase.RouteScore stored : database.loadRouteScores(key)) {
+                    Score score = new Score();
+                    score.success = stored.successCount;
+                    score.failure = stored.failureCount;
+                    score.totalFirstFrameMs = stored.totalFirstFrameMs;
+                    disk.put(stored.routeId, score);
+                }
+                loadedFromDisk = true;
+            } catch (RuntimeException ignored) {
+                // Closing or a transient database failure must not kill the process.
             }
             synchronized (PersistentPlaybackProfile.this) {
+                loading.remove(key);
+                if (closed || !loadedFromDisk) return;
                 Map<String, Score> memory = loaded.get(key);
                 if (memory == null) {
                     loaded.put(key, disk);
                 } else {
                     for (Map.Entry<String, Score> entry : disk.entrySet()) {
                         Score current = memory.get(entry.getKey());
-                        if (current == null) memory.put(entry.getKey(), entry.getValue());
+                        if (current == null) {
+                            memory.put(entry.getKey(), entry.getValue());
+                        } else {
+                            // rank() creates zero-valued in-memory scores while the
+                            // async read is pending. Merge persisted history into
+                            // those placeholders, plus any result recorded meanwhile.
+                            current.success += entry.getValue().success;
+                            current.failure += entry.getValue().failure;
+                            current.totalFirstFrameMs += entry.getValue().totalFirstFrameMs;
+                        }
                     }
                 }
-                loading.remove(key);
             }
-        });
+        })) loading.remove(key);
+    }
+
+    /** Caller holds this object's monitor so close cannot overtake the enqueue. */
+    private boolean enqueueLocked(Runnable task) {
+        if (closed) return false;
+        try {
+            io.submit(task);
+            return true;
+        } catch (RejectedExecutionException ignored) {
+            return false;
+        }
     }
 
     private Score score(String profileKey, String routeId) {
@@ -111,8 +150,17 @@ public final class PersistentPlaybackProfile implements AutoCloseable {
         return score;
     }
 
-    @Override public void close() {
-        io.shutdownNow();
+    @Override public synchronized void close() {
+        if (closed) return;
+        closed = true;
+        try {
+            // The single-thread queue guarantees all accepted reads/writes finish
+            // before their owning helper is closed.
+            io.submit(database::close);
+        } catch (RejectedExecutionException ignored) {
+            database.close();
+        }
+        io.shutdown();
     }
 
     private static String clean(String value) { return value == null ? "" : value.trim(); }

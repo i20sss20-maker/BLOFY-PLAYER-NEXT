@@ -1,0 +1,28 @@
+FFmpeg notice for BLOFY PLAYER NEXT
+===================================
+
+This application includes portions of FFmpeg, built without GPL or nonfree
+components and used by the AndroidX Media3 FFmpeg audio decoder extension.
+
+FFmpeg source revision:
+  3f92512fd1fd6f5e6d6eb45a156c352835314d69 (release/6.0)
+
+Media3 extension source revision:
+  2bc207851df311340767e913931ca7b28cab1794 (Media3 1.11.0)
+
+Enabled FFmpeg decoders:
+  ac3, eac3, dca (DTS)
+
+FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or
+later, subject to the exact configuration of the build. A copy of LGPL 2.1 is
+included next to this notice as COPYING.LGPLv2.1.
+
+Corresponding upstream source:
+  https://github.com/FFmpeg/FFmpeg/tree/3f92512fd1fd6f5e6d6eb45a156c352835314d69
+
+Reproducible build inputs and commands are shipped in the BLOFY PLAYER NEXT
+source repository under config/media3-ffmpeg.properties and
+scripts/build-media3-ffmpeg.sh.
+
+FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
+This product is not affiliated with or endorsed by the FFmpeg project.

@@ -15,7 +15,7 @@ public class ServerPlaybackProfileTest {
                 Collections.emptyMap());
     }
 
-    @Test public void successfulFastRouteMovesAhead() {
+    @Test public void learnedBestEngineAndCandidateMovesAheadForProfileRevision() {
         ServerPlaybackProfile profile = new ServerPlaybackProfile();
         PlaybackRoute a = route("a");
         PlaybackRoute b = route("b");
@@ -24,5 +24,6 @@ public class ServerPlaybackProfileTest {
         profile.recordSuccess("key", "b", 1100);
         List<PlaybackRoute> ranked = profile.rank("key", Arrays.asList(a, b));
         assertEquals("b", ranked.get(0).id);
+        assertEquals("a", ranked.get(1).id);
     }
 }

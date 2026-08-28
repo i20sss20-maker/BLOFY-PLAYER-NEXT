@@ -5,9 +5,11 @@ import android.view.SurfaceView;
 
 import androidx.media3.common.util.UnstableApi;
 
+import tv.blofy.player.BlofyApplication;
+
 /**
- * Owns the small Live-TV preview. Focus movement is debounced and every new preview
- * cancels the previous PlaybackCore session so rapid D-pad navigation cannot stack players.
+ * Owns the small Live-TV preview UI binding. The application PlaybackSessionHost owns the
+ * decoder, so preview can be promoted to fullscreen without a second provider connection.
  */
 @UnstableApi
 public final class LivePreviewController implements AutoCloseable {
@@ -17,8 +19,10 @@ public final class LivePreviewController implements AutoCloseable {
         void onFailure(PlaybackFailure failure, String diagnostics);
     }
 
-    private final PlaybackCore core;
+    private final PlaybackSessionHost host;
+    private final PlaybackSessionHost.Binding binding;
     private final PreviewDebouncer debouncer;
+    private SurfaceView surface;
     private String deviceProfile = "default";
     private long generation;
     private boolean closed;
@@ -28,13 +32,19 @@ public final class LivePreviewController implements AutoCloseable {
     }
 
     public LivePreviewController(Context context, long debounceMs) {
-        core = new PlaybackCore(context.getApplicationContext());
+        Context app = context.getApplicationContext();
+        if (!(app instanceof BlofyApplication)) {
+            throw new IllegalStateException("BlofyApplication is required");
+        }
+        host = ((BlofyApplication) app).playback();
+        binding = host.newPreviewBinding();
         debouncer = new PreviewDebouncer(debounceMs);
     }
 
     public synchronized void attach(SurfaceView surface) {
         if (closed) return;
-        core.attach(surface);
+        this.surface = surface;
+        host.attachPreview(binding, surface);
     }
 
     public synchronized void setDeviceProfile(String value) {
@@ -52,8 +62,33 @@ public final class LivePreviewController implements AutoCloseable {
             synchronized (LivePreviewController.this) {
                 if (closed || token != generation) return;
             }
-            PlaybackRequest preview = asPreview(request);
-            core.play(preview, deviceProfile, new PlaybackCore.Listener() {
+            startNow(token, request, listener);
+        });
+    }
+
+    /** Reclaim the shared session immediately during fullscreen Back navigation. */
+    public void resume(PlaybackRequest request, Listener listener) {
+        if (request == null) return;
+        final long token;
+        synchronized (this) {
+            if (closed) return;
+            token = ++generation;
+            debouncer.cancel();
+        }
+        startNow(token, request, listener);
+    }
+
+    private void startNow(long token, PlaybackRequest request, Listener listener) {
+        final SurfaceView targetSurface;
+        final String targetProfile;
+        synchronized (this) {
+            if (closed || token != generation) return;
+            targetSurface = surface;
+            targetProfile = deviceProfile;
+        }
+        PlaybackRequest preview = asPreview(request);
+        host.requestPreview(binding, targetSurface, preview, targetProfile,
+                new PlaybackSessionHost.Observer() {
                 @Override public void onState(PlaybackSession.State state) {
                     if (isCurrent(token) && listener != null) listener.onState(state);
                 }
@@ -62,18 +97,41 @@ public final class LivePreviewController implements AutoCloseable {
                     if (isCurrent(token) && listener != null) listener.onFirstFrame(route, elapsedMs);
                 }
 
-                @Override public void onFinalFailure(PlaybackFailure failure, String diagnostics) {
+                @Override public void onFailure(PlaybackFailure failure, String diagnostics) {
                     if (isCurrent(token) && listener != null) listener.onFailure(failure, diagnostics);
                 }
             });
-        });
     }
 
-    /** Stop pending focus work and invalidate callbacks from the previous preview. */
+    /** Promote the focused channel while retaining the active decoder/provider connection. */
+    public synchronized long promote(PlaybackRequest request) {
+        if (closed || request == null) return 0L;
+        generation++;
+        debouncer.cancel();
+        return host.promoteToFullscreen(
+                binding, surface, asLive(request), deviceProfile);
+    }
+
+    /** Stop pending focus work and the preview only when this binding still owns it. */
     public synchronized void cancel() {
         generation++;
         debouncer.cancel();
-        core.cancel();
+        host.cancelPreview(binding);
+    }
+
+    /** Invalidate delayed focus work without touching an application-owned active session. */
+    public synchronized void cancelPending() {
+        generation++;
+        debouncer.cancel();
+    }
+
+    /** Release this Activity surface without affecting a fullscreen owner. */
+    public synchronized void detach(boolean changingConfiguration) {
+        generation++;
+        debouncer.cancel();
+        host.release(binding, changingConfiguration
+                ? PlaybackSessionHost.ExitReason.CONFIGURATION
+                : PlaybackSessionHost.ExitReason.BACKGROUND);
     }
 
     private synchronized boolean isCurrent(long token) {
@@ -86,11 +144,18 @@ public final class LivePreviewController implements AutoCloseable {
                 source.extension, source.userAgent, source.referer, source.ultraHd);
     }
 
+    private static PlaybackRequest asLive(PlaybackRequest source) {
+        return new PlaybackRequest(source.playlistId, source.providerHost,
+                PlaybackRequest.Kind.LIVE, source.streamId, source.sourceUrl,
+                source.extension, source.userAgent, source.referer, source.ultraHd);
+    }
+
     @Override public synchronized void close() {
         if (closed) return;
         closed = true;
         generation++;
         debouncer.close();
-        core.close();
+        host.release(binding, PlaybackSessionHost.ExitReason.BACKGROUND);
+        surface = null;
     }
 }

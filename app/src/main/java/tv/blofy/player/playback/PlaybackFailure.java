@@ -1,5 +1,7 @@
 package tv.blofy.player.playback;
 
+import java.util.Locale;
+
 public final class PlaybackFailure extends Exception {
     public enum Type {
         NETWORK, AUTH, HTTP, TIMEOUT, SOURCE_EXPIRED, CONTAINER, CODEC,
@@ -25,7 +27,7 @@ public final class PlaybackFailure extends Exception {
     }
 
     public static PlaybackFailure timeout(String stage) {
-        String clean = stage == null ? "UNKNOWN" : stage.toUpperCase();
+        String clean = stage == null ? "UNKNOWN" : stage.toUpperCase(Locale.ROOT);
         return new PlaybackFailure(Type.TIMEOUT, clean + "-TIMEOUT", "timeout", 0, true, null);
     }
 }

@@ -34,6 +34,7 @@ public final class ServerPlaybackProfile {
 
     public synchronized List<PlaybackRoute> rank(String profileKey, List<PlaybackRoute> routes) {
         List<PlaybackRoute> ranked = new ArrayList<>(routes);
+        if (ranked.size() <= 1) return ranked;
         ranked.sort(Comparator.comparingDouble((PlaybackRoute route) ->
                 score(profileKey, route.id).value()).reversed());
         return ranked;

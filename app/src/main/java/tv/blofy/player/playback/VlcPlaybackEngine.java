@@ -25,7 +25,12 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
 
     @Override public synchronized void attach(SurfaceView surfaceView) {
         surface = surfaceView;
-        if (player != null) attachSurface(player);
+        if (player == null) return;
+        if (surface == null) {
+            try { player.getVLCVout().detachViews(); } catch (RuntimeException ignored) {}
+        } else {
+            attachSurface(player);
+        }
     }
 
     @Override public synchronized void play(PlaybackRoute route, Listener callback) throws PlaybackFailure {
@@ -41,7 +46,7 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
             options.add("--network-caching=1200");
             options.add("--clock-jitter=0");
             options.add("--clock-synchro=0");
-            libVlc = new LibVLC(context, options);
+            if (libVlc == null) libVlc = new LibVLC(context, options);
             player = new MediaPlayer(libVlc);
             attachSurface(player);
             player.setEventListener(event -> {
@@ -105,10 +110,6 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
             try { player.release(); } catch (RuntimeException ignored) {}
             player = null;
         }
-        if (libVlc != null) {
-            try { libVlc.release(); } catch (RuntimeException ignored) {}
-            libVlc = null;
-        }
     }
 
     @Override public synchronized boolean isPlaying() {
@@ -121,5 +122,11 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
 
     @Override public String name() { return "vlc"; }
 
-    @Override public void close() { stop(); }
+    @Override public synchronized void close() {
+        stop();
+        if (libVlc != null) {
+            try { libVlc.release(); } catch (RuntimeException ignored) {}
+            libVlc = null;
+        }
+    }
 }

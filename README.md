@@ -20,4 +20,8 @@ Clean Android TV playback architecture for BLOFY PLAYER.
 7. Cache-first UI: previously synchronized catalog data opens immediately and refreshes in the background.
 8. New playback behavior is covered by tests before being promoted to release.
 
+## Current vertical slice
+
+NEXT.1 preserves the production device identity and activation flow, lists cloud playlists without auto-connecting, publishes paged Live refreshes atomically, and opens the last complete cache immediately. `native-link v2` supplies only real signed provider candidates and an opaque adaptive profile; preview and fullscreen hand off one application-owned player connection. Media3 is primary, LibVLC is the bounded compatibility ladder, and release CI builds the pinned FFmpeg AC3/EAC3/DTS extension. Raw playlist credentials, BLOFY cookies and provider URLs are never stored in the public catalog or sent through Intents.
+
 See `docs/NEXT_PLAN.md` and `docs/PLAYBACK_ARCHITECTURE.md`.

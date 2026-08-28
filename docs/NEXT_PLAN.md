@@ -11,8 +11,8 @@ This repository replaces the accumulated patch-chain architecture with clean sou
 5. Home is cache-first and includes latest Movies, Series and Episodes.
 6. One unified StreamResolver builds and classifies Live/Movie/Episode playback sources and MIME/container information.
 7. One unified adaptive profile per playlist/provider + content kind + container family + device capability. No duplicate profile systems.
-8. Provider Health Check: API, real Live sample, VOD sample and Episode sample when available, redirects/content-type/status and allowed output formats.
-9. Compatibility layer: redirects, HTTP status, content type, User-Agent, Referer, cookies, direct route first, alternate routes only when needed.
+8. Provider capability contract: API/account state, redirects/content type/status and declared allowed output formats. Never pre-open or Range-probe media because that can consume a provider connection.
+9. Compatibility layer: redirects, HTTP status, content type and allowlisted User-Agent/Referer/Origin. BLOFY cookies/device credentials never cross to a provider; future provider Cookie/Authorization support must be origin-bound before it can be enabled.
 10. Smart bounded retry: re-resolve/reprepare/TS-HLS alternate route/transport alternate/LibVLC fallback. Never show the final error until the current session's bounded ladder is exhausted.
 11. Diagnostics mode with typed codes and copyable report.
 12. Performance telemetry: page open, category open, resolve, HTTP, prepare, player-ready, first-frame and recovery durations.
@@ -36,6 +36,20 @@ This repository replaces the accumulated patch-chain architecture with clean sou
 - Long-session soak tests are mandatory.
 
 ## Delivery order
+
+### Implemented vertical slice — NEXT.1
+- production-compatible device identity and registration preferences
+- explicit `bootstrap?connect=0` playlist hub; no automatic server selection
+- device-authenticated playlist connect and Live catalog paging through BLOFY
+- cache-first Live open with staged atomic background refresh and stable provider ordering
+- public catalog keeps provider credentials and media URLs out of SQLite
+- cancellable `native-link v2`, opaque provider profiles and evidence-backed signed HLS/TS candidates
+- exact legacy route for VOD/older providers without manufacturing alternate formats
+- Media3 primary across candidates, classified LibVLC fallback and persisted best route per profile revision
+- shared preview/fullscreen `PlaybackCore` with Surface handoff and strict stop-before-next
+- first-frame and post-first-frame stall/ended watchdog recovery with bounded re-resolve windows
+- pinned Media3 FFmpeg build contract for AC3/EAC3/DTS; release packaging is mandatory in CI
+- D-pad/OK/touch de-duplication, deep-focus restoration and paging retry
 
 ### Phase 0 — compatibility foundation
 - preserve `tv.blofy.player`

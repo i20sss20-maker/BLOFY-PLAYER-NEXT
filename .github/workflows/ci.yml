@@ -11,11 +11,53 @@ permissions:
   contents: read
 
 jobs:
+  ffmpeg-extension:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore pinned FFmpeg extension
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: app/libs/media3-decoder-ffmpeg-release.aar
+          key: media3-ffmpeg-${{ runner.os }}-${{ hashFiles('config/media3-ffmpeg.properties', 'scripts/build-media3-ffmpeg.sh', 'scripts/verify-media3-ffmpeg.sh') }}
+      - name: Install pinned NDK and CMake
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source config/media3-ffmpeg.properties
+          sdkmanager "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}"
+      - name: Build pinned Media3 FFmpeg extension
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: scripts/build-media3-ffmpeg.sh "$RUNNER_TEMP"
+      - name: Verify FFmpeg extension
+        run: scripts/verify-media3-ffmpeg.sh aar app/libs/media3-decoder-ffmpeg-release.aar
+      - name: Upload FFmpeg extension for application build
+        uses: actions/upload-artifact@v4
+        with:
+          name: media3-ffmpeg-extension
+          path: app/libs/media3-decoder-ffmpeg-release.aar
+          if-no-files-found: error
+          retention-days: 7
+
   test-build:
+    needs: ffmpeg-extension
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Download pinned FFmpeg extension
+        uses: actions/download-artifact@v4
+        with:
+          name: media3-ffmpeg-extension
+          path: app/libs
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -27,8 +69,10 @@ jobs:
         run: gradle --no-daemon testDebugUnitTest
       - name: Lint
         run: gradle --no-daemon lintDebug
-      - name: Build clean release source
-        run: gradle --no-daemon assembleRelease
+      - name: Build and verify clean release source
+        run: gradle --no-daemon verifyReleaseFfmpegPackaging
+      - name: Verify FFmpeg and ARM-only JNI in APK
+        run: scripts/verify-media3-ffmpeg.sh apk app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Guard against patch-chain regression
         run: |
           set -euo pipefail

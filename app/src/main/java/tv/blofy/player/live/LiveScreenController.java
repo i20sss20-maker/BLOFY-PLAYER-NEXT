@@ -7,7 +7,9 @@ import androidx.media3.common.util.UnstableApi;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import tv.blofy.player.data.CatalogItem;
 import tv.blofy.player.data.CatalogRepository;
@@ -25,10 +27,11 @@ import tv.blofy.player.playback.PlaybackSession;
 public final class LiveScreenController implements AutoCloseable {
     public interface Listener {
         void onItems(List<CatalogItem> items, int focusedIndex, boolean loadingMore);
+        void onFocusChanged(int focusedIndex);
         void onPreviewState(PlaybackSession.State state);
         void onPreviewFirstFrame(PlaybackRoute route, long elapsedMs);
         void onPreviewFailure(PlaybackFailure failure, String diagnostics);
-        void onOpenFullscreen(PlaybackRequest request);
+        void onOpenFullscreen(PlaybackRequest request, long handoffId);
         void onError(Throwable error);
     }
 
@@ -59,13 +62,17 @@ public final class LiveScreenController implements AutoCloseable {
     private final Config config;
     private final Listener listener;
     private final List<CatalogItem> items = new ArrayList<>();
+    private final Set<String> itemIds = new HashSet<>();
 
     private int focusedIndex = -1;
+    private int requestedFocusIndex = -1;
     private int nextOffset;
     private boolean loading;
     private boolean endReached;
     private long generation;
     private long lastOkAtMs;
+    private boolean previewSuspended;
+    private boolean fullscreenPending;
     private boolean closed;
 
     public LiveScreenController(CatalogRepository repository, LivePreviewController preview,
@@ -77,25 +84,40 @@ public final class LiveScreenController implements AutoCloseable {
         this.preview.setDeviceProfile(config.deviceProfile);
     }
 
-    public synchronized void start() {
+    public void start() { start(-1); }
+
+    /** Start loading while preserving a requested deep focus before page zero can render. */
+    public synchronized void start(int initialFocusIndex) {
         if (closed) return;
         generation++;
         items.clear();
+        itemIds.clear();
         focusedIndex = -1;
+        requestedFocusIndex = initialFocusIndex < 0 ? -1 : initialFocusIndex;
         nextOffset = 0;
         endReached = false;
         loading = false;
-        preview.cancel();
+        previewSuspended = false;
+        fullscreenPending = false;
+        preview.cancelPending();
         loadNextPageLocked(generation);
     }
 
     /** Move focus by one row. Returns true when focus changed. */
     public synchronized boolean move(int delta) {
+        if (fullscreenPending) return true;
         if (closed || items.isEmpty() || delta == 0) return false;
         int target = Math.max(0, Math.min(items.size() - 1, focusedIndex + delta));
-        if (target == focusedIndex) return false;
+        if (target == focusedIndex) {
+            if (delta > 0 && focusedIndex == items.size() - 1 && !endReached) {
+                if (!loading) loadNextPageLocked(generation);
+                return true;
+            }
+            return false;
+        }
         focusedIndex = target;
-        renderLocked();
+        requestedFocusIndex = -1;
+        notifyFocusLocked();
         focusPreviewLocked();
         if (!endReached && !loading && focusedIndex >= items.size() - 8) {
             loadNextPageLocked(generation);
@@ -105,25 +127,55 @@ public final class LiveScreenController implements AutoCloseable {
 
     /** Restore a stable focus index after configuration/UI recreation. */
     public synchronized void restoreFocus(int index) {
-        if (closed || items.isEmpty()) return;
-        focusedIndex = Math.max(0, Math.min(index, items.size() - 1));
-        renderLocked();
+        if (closed || fullscreenPending) return;
+        requestedFocusIndex = Math.max(0, index);
+        if (items.isEmpty()) return;
+        if (requestedFocusIndex >= items.size() && !endReached) {
+            if (!loading) loadNextPageLocked(generation);
+            return;
+        }
+        focusedIndex = Math.min(requestedFocusIndex, items.size() - 1);
+        requestedFocusIndex = -1;
+        notifyFocusLocked();
         focusPreviewLocked();
     }
 
     /** Debounces accidental double-OK so one press can never open stacked players. */
     public synchronized boolean openFocused(long eventTimeMs) {
+        if (fullscreenPending) return true;
         if (closed || focusedIndex < 0 || focusedIndex >= items.size()) return false;
         long now = Math.max(0L, eventTimeMs);
         if (now - lastOkAtMs < 450L) return false;
-        lastOkAtMs = now;
         PlaybackRequest request = requestFor(items.get(focusedIndex), false);
-        preview.cancel();
-        if (listener != null) main.post(() -> listener.onOpenFullscreen(request));
+        long handoffId = preview.promote(request);
+        if (handoffId <= 0L) return false;
+        lastOkAtMs = now;
+        fullscreenPending = true;
+        long token = generation;
+        if (listener != null) {
+            main.post(() -> dispatchFullscreen(token, request, handoffId));
+        }
         return true;
     }
 
     public synchronized int focusedIndex() { return focusedIndex; }
+
+    public synchronized int restorableFocusIndex() {
+        return requestedFocusIndex >= 0 ? requestedFocusIndex : focusedIndex;
+    }
+
+    /** Resume the selected preview after returning from fullscreen or the TV launcher. */
+    public synchronized void resumePreview() {
+        previewSuspended = false;
+        fullscreenPending = false;
+        if (closed || focusedIndex < 0 || focusedIndex >= items.size()) return;
+        preview.resume(requestFor(items.get(focusedIndex), true), previewListener());
+    }
+
+    /** Prevent delayed catalog/focus callbacks from starting playback while the Activity is hidden. */
+    public synchronized void suspendPreview() {
+        previewSuspended = true;
+    }
 
     public synchronized List<CatalogItem> snapshot() {
         return Collections.unmodifiableList(new ArrayList<>(items));
@@ -149,16 +201,28 @@ public final class LiveScreenController implements AutoCloseable {
     private synchronized void acceptPage(long token, int offset, List<CatalogItem> page) {
         if (closed || token != generation) return;
         List<CatalogItem> safe = page == null ? Collections.emptyList() : page;
-        if (offset == 0) items.clear();
-        appendUnique(items, safe);
+        if (offset == 0) {
+            items.clear();
+            itemIds.clear();
+        }
+        appendUnique(items, itemIds, safe);
         nextOffset = items.size();
         loading = false;
         if (safe.size() < config.pageSize) endReached = true;
-        if (focusedIndex < 0 && !items.isEmpty()) {
+        if (requestedFocusIndex >= 0
+                && (requestedFocusIndex < items.size() || endReached)
+                && !items.isEmpty()) {
+            focusedIndex = Math.min(requestedFocusIndex, items.size() - 1);
+            requestedFocusIndex = -1;
+            focusPreviewLocked();
+        } else if (focusedIndex < 0 && requestedFocusIndex < 0 && !items.isEmpty()) {
             focusedIndex = 0;
             focusPreviewLocked();
         }
         renderLocked();
+        if (requestedFocusIndex >= items.size() && !endReached && !loading) {
+            loadNextPageLocked(generation);
+        }
     }
 
     private synchronized void failPage(long token, Throwable error) {
@@ -168,10 +232,22 @@ public final class LiveScreenController implements AutoCloseable {
         if (listener != null) listener.onError(error);
     }
 
+    private void dispatchFullscreen(long token, PlaybackRequest request, long handoffId) {
+        synchronized (this) {
+            if (closed || previewSuspended || token != generation) return;
+        }
+        if (listener != null) listener.onOpenFullscreen(request, handoffId);
+    }
+
     private void focusPreviewLocked() {
-        if (focusedIndex < 0 || focusedIndex >= items.size()) return;
+        if (previewSuspended || fullscreenPending
+                || focusedIndex < 0 || focusedIndex >= items.size()) return;
         PlaybackRequest request = requestFor(items.get(focusedIndex), true);
-        preview.focus(request, new LivePreviewController.Listener() {
+        preview.focus(request, previewListener());
+    }
+
+    private LivePreviewController.Listener previewListener() {
+        return new LivePreviewController.Listener() {
             @Override public void onState(PlaybackSession.State state) {
                 if (listener != null) listener.onPreviewState(state);
             }
@@ -183,14 +259,14 @@ public final class LiveScreenController implements AutoCloseable {
             @Override public void onFailure(PlaybackFailure failure, String diagnostics) {
                 if (listener != null) listener.onPreviewFailure(failure, diagnostics);
             }
-        });
+        };
     }
 
     private PlaybackRequest requestFor(CatalogItem item, boolean previewMode) {
         boolean ultraHd = contains4k(item.title);
         return new PlaybackRequest(config.playlistId, config.providerHost,
                 previewMode ? PlaybackRequest.Kind.PREVIEW : PlaybackRequest.Kind.LIVE,
-                item.id, item.streamUrl, item.extension, config.userAgent, config.referer, ultraHd);
+                item.id, "", item.extension, config.userAgent, config.referer, ultraHd);
     }
 
     private void renderLocked() {
@@ -201,13 +277,16 @@ public final class LiveScreenController implements AutoCloseable {
         main.post(() -> listener.onItems(snapshot, focus, isLoading));
     }
 
-    private static void appendUnique(List<CatalogItem> target, List<CatalogItem> source) {
+    private void notifyFocusLocked() {
+        if (listener == null) return;
+        int focus = focusedIndex;
+        main.post(() -> listener.onFocusChanged(focus));
+    }
+
+    private static void appendUnique(List<CatalogItem> target, Set<String> ids,
+                                     List<CatalogItem> source) {
         for (CatalogItem candidate : source) {
-            boolean exists = false;
-            for (CatalogItem current : target) {
-                if (current.id.equals(candidate.id)) { exists = true; break; }
-            }
-            if (!exists) target.add(candidate);
+            if (candidate != null && ids.add(candidate.id)) target.add(candidate);
         }
     }
 
@@ -222,6 +301,8 @@ public final class LiveScreenController implements AutoCloseable {
         if (closed) return;
         closed = true;
         generation++;
+        previewSuspended = true;
+        fullscreenPending = false;
         preview.cancel();
     }
 }

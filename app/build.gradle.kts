@@ -1,3 +1,7 @@
+import java.util.Properties
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+
 plugins {
     id("com.android.application")
 }
@@ -8,6 +12,15 @@ val portalUrl = providers.gradleProperty("BLOFY_BASE_URL")
     .orElse(providers.environmentVariable("BLOFY_BASE_URL"))
     .orElse("https://blofy-player-2026-production.up.railway.app")
 
+val ffmpegLockFile = rootProject.file("config/media3-ffmpeg.properties")
+val ffmpegLock = Properties().apply {
+    ffmpegLockFile.inputStream().use(::load)
+}
+val ffmpegAar = rootProject.file(
+    ffmpegLock.getProperty("AAR_PATH")
+        ?: error("AAR_PATH is missing from ${ffmpegLockFile.path}")
+)
+
 android {
     namespace = "tv.blofy.player"
     compileSdk = 36
@@ -17,8 +30,8 @@ android {
         minSdk = 23
         targetSdk = 36
         // NEXT keeps the same package and signer, but uses a higher code than the v340 line.
-        versionCode = 1001000
-        versionName = "2026.08-NEXT.0"
+        versionCode = 1001001
+        versionName = "2026.08-NEXT.1"
         buildConfigField("String", "BLOFY_BASE_URL", quoted(portalUrl.get().trimEnd('/')))
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -75,12 +88,99 @@ dependencies {
     // Container/codec fallback. Media3 remains the primary engine.
     implementation("org.videolan.android:libvlc-all:3.7.5")
 
-    // CI builds the Media3 FFmpeg extension into this location. It is deliberately
-    // ignored by Git so binary decoder artifacts are never treated as source.
-    val ffmpeg = file("libs/media3-decoder-ffmpeg-release.aar")
-    if (ffmpeg.exists()) implementation(files(ffmpeg))
+    // Built by scripts/build-media3-ffmpeg.sh. Debug remains usable without the
+    // binary, while preReleaseBuild below makes the extension mandatory for release.
+    if (ffmpegAar.exists()) implementation(files(ffmpegAar))
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
+}
+
+val verifyMedia3FfmpegAar = tasks.register("verifyMedia3FfmpegAar") {
+    group = "verification"
+    description = "Rejects a missing, stale, or structurally incomplete Media3 FFmpeg AAR."
+    doLast {
+        if (!ffmpegAar.isFile || ffmpegAar.length() == 0L) {
+            throw GradleException(
+                "Pinned Media3 FFmpeg AAR is missing: ${ffmpegAar.path}. " +
+                    "Run scripts/build-media3-ffmpeg.sh first."
+            )
+        }
+        ZipFile(ffmpegAar).use { archive ->
+            val required = listOf(
+                "classes.jar",
+                "jni/armeabi-v7a/libffmpegJNI.so",
+                "jni/arm64-v8a/libffmpegJNI.so",
+                "META-INF/blofy-media3-ffmpeg.properties",
+            )
+            required.forEach { entry ->
+                if (archive.getEntry(entry) == null) {
+                    throw GradleException("Media3 FFmpeg AAR is missing $entry")
+                }
+            }
+
+            val receipt = archive.getInputStream(
+                archive.getEntry("META-INF/blofy-media3-ffmpeg.properties")
+            ).use { it.readBytes() }
+            if (!receipt.contentEquals(ffmpegLockFile.readBytes())) {
+                throw GradleException("Media3 FFmpeg AAR does not match the pinned build inputs.")
+            }
+
+            var rendererFound = false
+            ZipInputStream(archive.getInputStream(archive.getEntry("classes.jar"))).use { classes ->
+                while (true) {
+                    val entry = classes.nextEntry ?: break
+                    if (entry.name == "androidx/media3/decoder/ffmpeg/FfmpegAudioRenderer.class") {
+                        rendererFound = true
+                        break
+                    }
+                }
+            }
+            if (!rendererFound) {
+                throw GradleException("FfmpegAudioRenderer is missing from the decoder AAR.")
+            }
+        }
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(verifyMedia3FfmpegAar)
+}
+
+tasks.register("verifyReleaseFfmpegPackaging") {
+    group = "verification"
+    description = "Checks FFmpeg presence, license notices, and ARM-only JNI in the release APK."
+    dependsOn("assembleRelease")
+    doLast {
+        val apks = fileTree(layout.buildDirectory.dir("outputs/apk/release")) {
+            include("*.apk")
+        }.files.toList()
+        if (apks.size != 1) {
+            throw GradleException("Expected exactly one release APK, found ${apks.size}.")
+        }
+        ZipFile(apks.single()).use { apk ->
+            val entries = apk.entries().asSequence().map { it.name }.toSet()
+            val required = setOf(
+                "lib/armeabi-v7a/libffmpegJNI.so",
+                "lib/arm64-v8a/libffmpegJNI.so",
+                "assets/licenses/ffmpeg/NOTICE.txt",
+                "assets/licenses/ffmpeg/COPYING.LGPLv2.1",
+            )
+            val missing = required - entries
+            if (missing.isNotEmpty()) {
+                throw GradleException("Release APK is missing: ${missing.sorted().joinToString()}")
+            }
+            val nativeAbis = entries
+                .filter { it.startsWith("lib/") && it.endsWith(".so") }
+                .map { it.substringAfter("lib/").substringBefore('/') }
+                .toSet()
+            val unexpected = nativeAbis - setOf("armeabi-v7a", "arm64-v8a")
+            if (unexpected.isNotEmpty()) {
+                throw GradleException(
+                    "Release APK contains non-ARM native libraries: ${unexpected.sorted().joinToString()}"
+                )
+            }
+        }
+    }
 }
