@@ -65,7 +65,11 @@ public final class PlaybackSourceCandidate {
         if (transport == PlaybackRoute.Transport.TS) {
             return "ts".equals(ext) || "mts".equals(ext) || "m2ts".equals(ext);
         }
-        return transport == PlaybackRoute.Transport.DIRECT && !ext.isEmpty();
+        // A signed provider contract may explicitly prove a DIRECT endpoint whose
+        // path intentionally has no suffix (common with tokenised VOD/live gateways).
+        // Do not invent or strip extensions locally: accept the exact evidence-backed
+        // URL and let its stable candidate ID participate in persistent route learning.
+        return transport == PlaybackRoute.Transport.DIRECT;
     }
 
     private static String normalizeExtension(String value) {
