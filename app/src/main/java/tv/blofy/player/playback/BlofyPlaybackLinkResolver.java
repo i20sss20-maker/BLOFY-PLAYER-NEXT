@@ -2,11 +2,12 @@ package tv.blofy.player.playback;
 
 import android.content.Context;
 
+import androidx.media3.common.util.UnstableApi;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.InterruptedIOException;
-import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -14,13 +15,29 @@ import java.util.Locale;
 import java.util.Set;
 
 import tv.blofy.player.BlofyApi;
+import tv.blofy.player.BlofyApplication;
+import tv.blofy.player.remoteconfig.RemoteConfigManager;
+import tv.blofy.player.remoteconfig.RemoteConfigSnapshot;
 
 /** Resolves a catalog id through BLOFY, then hands only the provider URL to an engine. */
+@UnstableApi
 final class BlofyPlaybackLinkResolver {
     private final BlofyApi api;
+    private final RemoteConfigManager remoteConfig;
 
     BlofyPlaybackLinkResolver(Context context) {
-        api = new BlofyApi(context.getApplicationContext());
+        Context app = context.getApplicationContext();
+        api = new BlofyApi(app);
+        remoteConfig = app instanceof BlofyApplication
+                ? ((BlofyApplication) app).remoteConfig()
+                : new RemoteConfigManager(app);
+    }
+
+    /** Reads only the verified local cache; this method never opens a network connection. */
+    PlaybackRequest withCachedConfig(PlaybackRequest request) {
+        if (request == null) return null;
+        return request.withRemoteConfig(remoteConfig.current(
+                request.providerProfileId, request.providerProfileRevision));
     }
 
     PlaybackRequest resolve(PlaybackRequest request, BlofyApi.Cancellation cancellation)
@@ -29,32 +46,42 @@ final class BlofyPlaybackLinkResolver {
             throw failure(PlaybackFailure.Type.UNKNOWN, "REQUEST-NULL", 0,
                     "request is null", false, null);
         }
-        if (!request.sourceUrl.isEmpty()) return request;
-        if (request.streamId.isEmpty()) {
+        // PlaybackCore freezes the cached global snapshot exactly once at session start.
+        // A native-link provider policy may extend that frozen view, but we never reload
+        // global cache here on the resolution worker.
+        PlaybackRequest configured = request;
+        if (!configured.sourceUrl.isEmpty()) return configured;
+        if (configured.streamId.isEmpty()) {
             throw failure(PlaybackFailure.Type.UNKNOWN, "SOURCE-UNRESOLVED", 0,
                     "stream id is missing", false, null);
         }
 
-        String extension = request.extension.isEmpty()
-                ? defaultExtension(request.kind) : request.extension;
-        String path = nativeLinkPath(request.kind, request.streamId, extension);
+        String extension = configured.extension.isEmpty()
+                ? defaultExtension(configured.kind) : configured.extension;
+        String path = nativeLinkPath(configured.kind, configured.streamId, extension);
         try {
-            JSONObject response = api.getPlayback(path, cancellation);
+            long nativeLinkTimeoutMs = configured.remoteConfig.effective.timeouts
+                    .nativeLinkTotalMs;
+            JSONObject response = api.getPlayback(path, cancellation, nativeLinkTimeoutMs);
             if (response.optInt("contractVersion", 0) >= 2) {
-                return resolveV2(request, response);
+                RemoteConfigManager.UpdateResult update = remoteConfig.acceptNativeLink(response);
+                RemoteConfigSnapshot sessionSnapshot = configured.remoteConfig
+                        .withProviderFrom(update.snapshot);
+                return resolveV2(configured, response, sessionSnapshot);
             }
             String url = clean(response.optString("url", ""));
-            if (!isHttpUrl(url)) {
+            if (!PlaybackUrlPolicy.isSafeSource(url)) {
                 throw failure(PlaybackFailure.Type.UNKNOWN, "SOURCE-INVALID", 0,
                         "BLOFY did not return a provider URL", false, null);
             }
             String resolvedExtension = normalizeExtension(
                     response.optString("extension", extension));
-            HeaderContract headers = headers(response, request);
-            return new PlaybackRequest(request.playlistId, request.providerHost, request.kind,
-                    request.streamId, url, resolvedExtension, headers.userAgent, headers.referer,
-                    headers.origin, request.ultraHd, "", 0,
-                    PlaybackConnectionPolicy.UNKNOWN, java.util.Collections.emptyList());
+            HeaderContract headers = headers(response, configured);
+            return new PlaybackRequest(configured.playlistId, configured.providerHost,
+                    configured.kind, configured.streamId, url, resolvedExtension,
+                    headers.userAgent, headers.referer, headers.origin,
+                    configured.ultraHd, "", 0, PlaybackConnectionPolicy.UNKNOWN,
+                    java.util.Collections.emptyList(), configured.remoteConfig);
         } catch (PlaybackFailure failure) {
             throw failure;
         } catch (BlofyApi.ApiException failure) {
@@ -70,15 +97,17 @@ final class BlofyPlaybackLinkResolver {
             throw failure(PlaybackFailure.Type.TIMEOUT, "LINK-TIMEOUT", 0,
                     "playback link timeout", true, failure);
         } catch (Exception failure) {
-            PlaybackFailure.Type type = failure instanceof SocketTimeoutException
-                    ? PlaybackFailure.Type.TIMEOUT : PlaybackFailure.Type.NETWORK;
-            throw failure(type, type == PlaybackFailure.Type.TIMEOUT
-                            ? "LINK-TIMEOUT" : "LINK-NETWORK",
+            PlaybackFailure.Type type = PlaybackFailureClassifier.networkType(failure, false);
+            String code = type == PlaybackFailure.Type.TIMEOUT ? "LINK-TIMEOUT"
+                    : type == PlaybackFailure.Type.DNS ? "LINK-DNS"
+                    : type == PlaybackFailure.Type.TLS ? "LINK-TLS" : "LINK-NETWORK";
+            throw failure(type, code,
                     0, failure.getMessage(), true, failure);
         }
     }
 
-    private static PlaybackRequest resolveV2(PlaybackRequest request, JSONObject response)
+    private static PlaybackRequest resolveV2(PlaybackRequest request, JSONObject response,
+                                             RemoteConfigSnapshot snapshot)
             throws PlaybackFailure {
         String profileId = clean(response.optString("profileId", ""));
         int profileRevision = Math.max(0, response.optInt("profileRevision", 0));
@@ -94,7 +123,7 @@ final class BlofyPlaybackLinkResolver {
         return resolveV2Contract(request, profileId, profileRevision, policy, candidates,
                 clean(response.optString("url", "")),
                 normalizeExtension(response.optString("extension", request.extension)),
-                headers.userAgent, headers.referer, headers.origin);
+                headers.userAgent, headers.referer, headers.origin, snapshot);
     }
 
     static PlaybackRequest resolveV2Contract(
@@ -102,13 +131,24 @@ final class BlofyPlaybackLinkResolver {
             PlaybackConnectionPolicy policy, List<PlaybackSourceCandidate> candidates,
             String exactUrl, String exactExtension, String userAgent,
             String referer, String origin) throws PlaybackFailure {
+        return resolveV2Contract(request, profileId, profileRevision, policy, candidates,
+                exactUrl, exactExtension, userAgent, referer, origin,
+                request == null ? RemoteConfigSnapshot.defaults() : request.remoteConfig);
+    }
+
+    static PlaybackRequest resolveV2Contract(
+            PlaybackRequest request, String profileId, int profileRevision,
+            PlaybackConnectionPolicy policy, List<PlaybackSourceCandidate> candidates,
+            String exactUrl, String exactExtension, String userAgent,
+            String referer, String origin, RemoteConfigSnapshot snapshot)
+            throws PlaybackFailure {
         List<PlaybackSourceCandidate> resolved = candidates == null
                 ? new ArrayList<>() : new ArrayList<>(candidates);
         if (resolved.isEmpty()) {
             exactUrl = clean(exactUrl);
             exactExtension = normalizeExtension(exactExtension);
             PlaybackRoute.Transport exactTransport = transportForExtension(exactExtension);
-            if (!isHttpUrl(exactUrl)
+            if (!PlaybackUrlPolicy.isSafeSource(exactUrl)
                     || !PlaybackSourceCandidate.transportMatchesExtension(
                     exactTransport, exactExtension)) {
                 throw failure(PlaybackFailure.Type.CONTAINER,
@@ -118,37 +158,52 @@ final class BlofyPlaybackLinkResolver {
             }
             // Backward compatibility is one exact signed source only. It never
             // creates an HLS/TS alternative; alternates must come from v2 candidates.
+            boolean cleartextInitial = exactUrl.regionMatches(
+                    true, 0, "http://", 0, 7);
             resolved.add(new PlaybackSourceCandidate("legacy-exact", exactUrl,
-                    exactExtension, exactTransport, "", "legacy-signed-exact"));
+                    exactExtension, exactTransport, "", "legacy-signed-exact",
+                    cleartextInitial ? "upgrade-only" : "same-scheme",
+                    cleartextInitial));
         }
         return request.withProviderContract(referer, origin, userAgent,
-                profileId, profileRevision, policy, resolved);
+                profileId, profileRevision, policy, resolved, snapshot);
     }
 
-    private static List<PlaybackSourceCandidate> candidates(JSONArray rows) {
+    static List<PlaybackSourceCandidate> candidates(JSONArray rows) {
         List<PlaybackSourceCandidate> result = new ArrayList<>();
         Set<String> ids = new HashSet<>();
         int count = rows == null ? 0 : Math.min(rows.length(), 8);
         for (int index = 0; index < count; index++) {
             JSONObject row = rows.optJSONObject(index);
-            if (row == null || !row.optBoolean("lazy", false)) continue;
+            if (row == null || !strictTrue(row.opt("lazy"))) continue;
             String id = clean(row.optString("id", ""));
             String nativePath = clean(row.optString("nativePath", ""));
             String url = clean(row.optString("url", ""));
             String extension = normalizeExtension(row.optString("extension", ""));
             String evidence = clean(row.optString("evidence", ""));
+            String redirectPolicy = clean(row.optString("redirectPolicy", "same-scheme"))
+                    .toLowerCase(Locale.US);
+            boolean knownRedirectPolicy = "same-scheme".equals(redirectPolicy)
+                    || "upgrade-only".equals(redirectPolicy);
             PlaybackRoute.Transport transport = PlaybackSourceCandidate.parseTransport(
                     row.optString("transport", ""));
             if (!id.matches("[A-Za-z0-9._-]{1,80}") || !ids.add(id)
                     || !nativePath.startsWith("/api/native-play?")
-                    || !isHttpUrl(url) || evidence.isEmpty()
+                    || !PlaybackUrlPolicy.isSafeSource(url) || evidence.isEmpty()
                     || evidence.indexOf('\r') >= 0 || evidence.indexOf('\n') >= 0
                     || !PlaybackSourceCandidate.transportMatchesExtension(
                     transport, extension)) continue;
             result.add(new PlaybackSourceCandidate(id, url, extension, transport,
-                    clean(row.optString("mimeType", "")), evidence));
+                    clean(row.optString("mimeType", "")), evidence,
+                    knownRedirectPolicy ? redirectPolicy : "same-scheme",
+                    knownRedirectPolicy && strictTrue(row.opt("vlcCompatible"))));
         }
         return result;
+    }
+
+    /** org.json accepts string booleans in optBoolean; security grants require a real Boolean. */
+    static boolean strictTrue(Object value) {
+        return Boolean.TRUE.equals(value);
     }
 
     private static PlaybackConnectionPolicy connectionPolicy(JSONObject value) {
@@ -198,17 +253,6 @@ final class BlofyPlaybackLinkResolver {
     private static String defaultExtension(PlaybackRequest.Kind kind) {
         return kind == PlaybackRequest.Kind.LIVE || kind == PlaybackRequest.Kind.PREVIEW
                 ? "ts" : "mp4";
-    }
-
-    private static boolean isHttpUrl(String value) {
-        try {
-            java.net.URL url = new java.net.URL(value);
-            return !url.getHost().isEmpty()
-                    && ("http".equalsIgnoreCase(url.getProtocol())
-                    || "https".equalsIgnoreCase(url.getProtocol()));
-        } catch (Exception ignored) {
-            return false;
-        }
     }
 
     private static String normalizeExtension(String value) {

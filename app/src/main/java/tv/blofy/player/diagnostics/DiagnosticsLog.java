@@ -27,4 +27,11 @@ public final class DiagnosticsLog {
         if (detail != null && !detail.trim().isEmpty()) line.append(" | ").append(detail.trim());
         store.append(line.toString());
     }
+
+    /** Persists an already-typed playback record locally; no network/export path exists here. */
+    public static synchronized void playback(String encodedEvent) {
+        if (store == null || encodedEvent == null || encodedEvent.trim().isEmpty()) return;
+        long elapsed = Math.max(0L, SystemClock.elapsedRealtime() - bootMs);
+        store.append("+" + elapsed + "ms [PLAYBACK] " + encodedEvent.trim());
+    }
 }

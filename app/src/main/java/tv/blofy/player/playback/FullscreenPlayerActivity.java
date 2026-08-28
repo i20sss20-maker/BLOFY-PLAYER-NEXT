@@ -87,7 +87,7 @@ public final class FullscreenPlayerActivity extends Activity {
                 streamId, "", text(EXTRA_EXTENSION), "", "",
                 getIntent().getBooleanExtra(EXTRA_ULTRA_HD, false));
         sessionId = host.startFullscreenFromIds(binding, surface, request,
-                defaultText(EXTRA_DEVICE_PROFILE, "default"), observer);
+                DeviceCapabilityProfile.resolve(this, text(EXTRA_DEVICE_PROFILE)), observer);
         if (sessionId <= 0L) status.setText("انتهت جلسة التشغيل");
     }
 
@@ -167,11 +167,6 @@ public final class FullscreenPlayerActivity extends Activity {
     private String text(String key) {
         String value = getIntent().getStringExtra(key);
         return value == null ? "" : value.trim();
-    }
-
-    private String defaultText(String key, String fallback) {
-        String value = text(key);
-        return value.isEmpty() ? fallback : value;
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }

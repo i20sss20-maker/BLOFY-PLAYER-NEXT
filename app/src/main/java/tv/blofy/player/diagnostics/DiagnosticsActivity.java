@@ -16,6 +16,7 @@ import android.widget.Toast;
 
 public final class DiagnosticsActivity extends Activity {
     private DiagnosticsStore store;
+    private TextView summary;
     private TextView report;
 
     @Override protected void onCreate(Bundle state) {
@@ -38,6 +39,26 @@ public final class DiagnosticsActivity extends Activity {
         title.setTextSize(24f);
         title.setGravity(Gravity.END);
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        summary = new TextView(this);
+        summary.setTextColor(Color.WHITE);
+        summary.setTextSize(16f);
+        summary.setTextIsSelectable(true);
+        summary.setGravity(Gravity.START);
+        summary.setBackgroundColor(Color.rgb(34, 27, 52));
+        summary.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(-1, -2);
+        summaryParams.topMargin = dp(16);
+        root.addView(summary, summaryParams);
+
+        TextView rawTitle = new TextView(this);
+        rawTitle.setText("السجل المحلي المنقّح");
+        rawTitle.setTextColor(Color.LTGRAY);
+        rawTitle.setTextSize(14f);
+        rawTitle.setGravity(Gravity.END);
+        LinearLayout.LayoutParams rawTitleParams = new LinearLayout.LayoutParams(-1, -2);
+        rawTitleParams.topMargin = dp(16);
+        root.addView(rawTitle, rawTitleParams);
 
         report = new TextView(this);
         report.setTextColor(Color.LTGRAY);
@@ -69,7 +90,15 @@ public final class DiagnosticsActivity extends Activity {
         return scroll;
     }
 
-    private void refresh() { report.setText(store.report()); }
+    @Override protected void onResume() {
+        super.onResume();
+        refresh();
+    }
+
+    private void refresh() {
+        summary.setText(store.playbackSummary());
+        report.setText(store.report());
+    }
 
     private void copy() {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);

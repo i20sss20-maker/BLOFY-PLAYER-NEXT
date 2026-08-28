@@ -6,6 +6,8 @@ import android.view.SurfaceView;
 import androidx.media3.common.util.UnstableApi;
 
 import tv.blofy.player.BlofyApplication;
+import tv.blofy.player.remoteconfig.RemoteConfigManager;
+import tv.blofy.player.remoteconfig.RemoteConfigSnapshot;
 
 /**
  * Owns the small Live-TV preview UI binding. The application PlaybackSessionHost owns the
@@ -22,6 +24,7 @@ public final class LivePreviewController implements AutoCloseable {
     private final PlaybackSessionHost host;
     private final PlaybackSessionHost.Binding binding;
     private final PreviewDebouncer debouncer;
+    private final RemoteConfigManager remoteConfig;
     private SurfaceView surface;
     private String deviceProfile = "default";
     private long generation;
@@ -36,7 +39,9 @@ public final class LivePreviewController implements AutoCloseable {
         if (!(app instanceof BlofyApplication)) {
             throw new IllegalStateException("BlofyApplication is required");
         }
-        host = ((BlofyApplication) app).playback();
+        BlofyApplication application = (BlofyApplication) app;
+        host = application.playback();
+        remoteConfig = application.remoteConfig();
         binding = host.newPreviewBinding();
         debouncer = new PreviewDebouncer(debounceMs);
     }
@@ -53,6 +58,11 @@ public final class LivePreviewController implements AutoCloseable {
 
     public void focus(PlaybackRequest request, Listener listener) {
         if (request == null) return;
+        if (!livePreviewEnabled()) {
+            cancel();
+            notifySuppressed(listener);
+            return;
+        }
         final long token;
         synchronized (this) {
             if (closed) return;
@@ -69,6 +79,11 @@ public final class LivePreviewController implements AutoCloseable {
     /** Reclaim the shared session immediately during fullscreen Back navigation. */
     public void resume(PlaybackRequest request, Listener listener) {
         if (request == null) return;
+        if (!livePreviewEnabled()) {
+            cancel();
+            notifySuppressed(listener);
+            return;
+        }
         final long token;
         synchronized (this) {
             if (closed) return;
@@ -79,6 +94,15 @@ public final class LivePreviewController implements AutoCloseable {
     }
 
     private void startNow(long token, PlaybackRequest request, Listener listener) {
+        if (!livePreviewEnabled()) {
+            synchronized (this) {
+                if (closed || token != generation) return;
+                generation++;
+            }
+            host.cancelPreview(binding);
+            notifySuppressed(listener);
+            return;
+        }
         final SurfaceView targetSurface;
         final String targetProfile;
         synchronized (this) {
@@ -136,6 +160,18 @@ public final class LivePreviewController implements AutoCloseable {
 
     private synchronized boolean isCurrent(long token) {
         return !closed && generation == token;
+    }
+
+    private boolean livePreviewEnabled() {
+        return isLivePreviewEnabled(remoteConfig.current("", 0));
+    }
+
+    public static boolean isLivePreviewEnabled(RemoteConfigSnapshot snapshot) {
+        return snapshot == null || snapshot.effective.feature("livePreview");
+    }
+
+    private static void notifySuppressed(Listener listener) {
+        if (listener != null) listener.onState(PlaybackSession.State.CANCELLED);
     }
 
     private static PlaybackRequest asPreview(PlaybackRequest source) {

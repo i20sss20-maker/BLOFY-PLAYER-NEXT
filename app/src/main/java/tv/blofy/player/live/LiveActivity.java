@@ -25,6 +25,7 @@ import tv.blofy.player.data.CatalogDatabase;
 import tv.blofy.player.data.CatalogItem;
 import tv.blofy.player.data.CatalogMemoryCache;
 import tv.blofy.player.data.CatalogRepository;
+import tv.blofy.player.playback.DeviceCapabilityProfile;
 import tv.blofy.player.playback.FullscreenPlayerActivity;
 import tv.blofy.player.playback.LivePreviewController;
 import tv.blofy.player.playback.PlaybackFailure;
@@ -44,6 +45,7 @@ public final class LiveActivity extends Activity implements LiveScreenController
     private SurfaceView previewSurface;
     private TextView previewState;
     private boolean fullscreenOpening;
+    private String deviceProfile;
     private int uiFocusedIndex = -1;
     private int pendingRestoredFocus = -1;
 
@@ -52,12 +54,14 @@ public final class LiveActivity extends Activity implements LiveScreenController
         if (state != null) pendingRestoredFocus = state.getInt("focused_index", -1);
         setContentView(buildUi());
 
+        deviceProfile = DeviceCapabilityProfile.resolve(this, extra("device_profile"));
+
         repository = new CatalogRepository(new CatalogDatabase(getApplicationContext()), new CatalogMemoryCache(18));
         preview = new LivePreviewController(getApplicationContext());
         preview.attach(previewSurface);
         LiveScreenController.Config config = new LiveScreenController.Config(
                 extra("playlist_id"), "", extra("category_id"),
-                "", "", defaultExtra("device_profile", "default"), 80);
+                "", "", deviceProfile, 80);
         controller = new LiveScreenController(repository, preview, config, this);
         controller.start(pendingRestoredFocus);
         pendingRestoredFocus = -1;
@@ -135,8 +139,11 @@ public final class LiveActivity extends Activity implements LiveScreenController
 
     @Override public void onPreviewState(PlaybackSession.State state) {
         runOnUiThread(() -> {
-            if (state == PlaybackSession.State.PLAYING) previewState.setVisibility(View.GONE);
-            else {
+            if (state == PlaybackSession.State.PLAYING
+                    || state == PlaybackSession.State.CANCELLED
+                    || state == PlaybackSession.State.IDLE) {
+                previewState.setVisibility(View.GONE);
+            } else {
                 previewState.setVisibility(View.VISIBLE);
                 previewState.setText(state == PlaybackSession.State.RECOVERING ? "جاري تجربة مسار آخر…" : "جاري تشغيل المعاينة…");
             }
@@ -163,7 +170,7 @@ public final class LiveActivity extends Activity implements LiveScreenController
         intent.putExtra(FullscreenPlayerActivity.EXTRA_STREAM_ID, request.streamId);
         // ID-only recovery data. Provider host/source URLs and headers never enter an Intent.
         intent.putExtra(FullscreenPlayerActivity.EXTRA_EXTENSION, request.extension);
-        intent.putExtra(FullscreenPlayerActivity.EXTRA_DEVICE_PROFILE, defaultExtra("device_profile", "default"));
+        intent.putExtra(FullscreenPlayerActivity.EXTRA_DEVICE_PROFILE, deviceProfile);
         intent.putExtra(FullscreenPlayerActivity.EXTRA_ULTRA_HD, request.ultraHd);
         try {
             startActivity(intent);
@@ -244,10 +251,6 @@ public final class LiveActivity extends Activity implements LiveScreenController
     private String extra(String key) {
         String value = getIntent().getStringExtra(key);
         return value == null ? "" : value.trim();
-    }
-    private String defaultExtra(String key, String fallback) {
-        String value = extra(key);
-        return value.isEmpty() ? fallback : value;
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 }

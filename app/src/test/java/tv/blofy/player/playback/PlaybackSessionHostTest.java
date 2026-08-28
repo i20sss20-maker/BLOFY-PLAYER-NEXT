@@ -14,7 +14,9 @@ import static org.junit.Assert.assertTrue;
 public final class PlaybackSessionHostTest {
     @Test public void previewPromotionAndFullscreenClaimReuseOnePlay() {
         FakeDriver driver = new FakeDriver();
-        PlaybackSessionHost host = new PlaybackSessionHost(driver);
+        FakeSessionGuard guard = new FakeSessionGuard();
+        PlaybackSessionHost host = new PlaybackSessionHost(
+                driver, (task, delayMs) -> {}, guard);
         PlaybackSessionHost.Binding preview = host.newPreviewBinding();
         host.attachPreview(preview, null);
         host.requestPreview(preview, null, request("11", PlaybackRequest.Kind.PREVIEW),
@@ -29,7 +31,59 @@ public final class PlaybackSessionHostTest {
         assertTrue(host.claimFullscreen(handoff, fullscreen, null, null));
         assertEquals(1, driver.playCount);
         assertEquals(0, driver.cancelCount);
+        assertEquals(1, guard.startCount);
+        assertEquals(0, guard.stopCount);
         assertTrue(host.isOwnedByForTest(fullscreen));
+    }
+
+    @Test public void foregroundGuardStartsOnlyForFullscreenAndStopsOnPreviewReturn() {
+        FakeDriver driver = new FakeDriver();
+        FakeSessionGuard guard = new FakeSessionGuard();
+        PlaybackSessionHost host = new PlaybackSessionHost(
+                driver, (task, delayMs) -> {}, guard);
+        PlaybackSessionHost.Binding preview = host.newPreviewBinding();
+        host.attachPreview(preview, null);
+        host.requestPreview(preview, null, request("11", PlaybackRequest.Kind.PREVIEW),
+                "tv", null);
+        assertEquals(0, guard.startCount);
+
+        long handoff = host.promoteToFullscreen(
+                preview, null, request("11", PlaybackRequest.Kind.LIVE), "tv");
+        PlaybackSessionHost.Binding fullscreen = host.newFullscreenBinding();
+        assertTrue(host.claimFullscreen(handoff, fullscreen, null, null));
+        assertEquals(1, guard.startCount);
+
+        host.release(fullscreen, PlaybackSessionHost.ExitReason.RETURNING_TO_PREVIEW);
+        assertEquals(0, guard.stopCount);
+        host.requestPreview(preview, null, request("11", PlaybackRequest.Kind.PREVIEW),
+                "tv", null);
+
+        assertEquals(1, guard.stopCount);
+        assertEquals(1, driver.playCount);
+    }
+
+    @Test public void finalFullscreenFailureStopsForegroundGuard() {
+        FakeDriver driver = new FakeDriver();
+        FakeSessionGuard guard = new FakeSessionGuard();
+        PlaybackSessionHost host = new PlaybackSessionHost(
+                driver, (task, delayMs) -> {}, guard);
+        PlaybackSessionHost.Binding fullscreen = host.newFullscreenBinding();
+        long session = host.startFullscreenFromIds(fullscreen, null,
+                request("11", PlaybackRequest.Kind.LIVE), "tv", null);
+        assertTrue(session > 0L);
+        assertEquals(1, guard.startCount);
+
+        driver.listeners.get(0).onFinalFailure(new PlaybackFailure(
+                PlaybackFailure.Type.AUTH, "TEST-AUTH", "denied", 403, false, null), "");
+
+        assertEquals(1, guard.stopCount);
+        assertEquals(session, guard.lastStoppedSessionId);
+
+        host.release(fullscreen, PlaybackSessionHost.ExitReason.CONFIGURATION);
+        PlaybackSessionHost.Binding recreated = host.newFullscreenBinding();
+        assertTrue(host.claimFullscreen(session, recreated, null, null));
+        assertEquals(1, guard.startCount);
+        assertEquals(1, guard.stopCount);
     }
 
     @Test public void nonOwnerPreviewCannotPromote() {
@@ -156,7 +210,8 @@ public final class PlaybackSessionHostTest {
     @Test public void detachedPendingHandoffExpiresInsteadOfLeaking() {
         FakeDriver driver = new FakeDriver();
         ManualScheduler scheduler = new ManualScheduler();
-        PlaybackSessionHost host = new PlaybackSessionHost(driver, scheduler);
+        FakeSessionGuard guard = new FakeSessionGuard();
+        PlaybackSessionHost host = new PlaybackSessionHost(driver, scheduler, guard);
         PlaybackSessionHost.Binding preview = host.newPreviewBinding();
         host.attachPreview(preview, null);
         host.requestPreview(preview, null, request("11", PlaybackRequest.Kind.PREVIEW),
@@ -166,9 +221,11 @@ public final class PlaybackSessionHostTest {
 
         host.release(preview, PlaybackSessionHost.ExitReason.BACKGROUND);
         assertEquals(0, driver.cancelCount);
+        assertEquals(1, guard.startCount);
         scheduler.runAll();
 
         assertEquals(1, driver.cancelCount);
+        assertEquals(1, guard.stopCount);
         assertEquals(0L, host.activeSessionIdForTest());
     }
 
@@ -194,6 +251,61 @@ public final class PlaybackSessionHostTest {
 
         driver.listeners.get(1).onFinalFailure(
                 PlaybackFailure.timeout("live-first-frame"), "live timeout");
+        assertEquals(2, driver.playCount);
+    }
+
+    @Test public void promotedPreviewSuppressionRestartsExactlyOneLiveRequest() {
+        FakeDriver driver = new FakeDriver();
+        PlaybackSessionHost host = new PlaybackSessionHost(driver);
+        PlaybackSessionHost.Binding preview = host.newPreviewBinding();
+        host.attachPreview(preview, null);
+        host.requestPreview(preview, null, request("11", PlaybackRequest.Kind.PREVIEW),
+                "tv", null);
+        long handoff = host.promoteToFullscreen(
+                preview, null, request("11", PlaybackRequest.Kind.LIVE), "tv");
+        PlaybackSessionHost.Binding fullscreen = host.newFullscreenBinding();
+        assertTrue(host.claimFullscreen(handoff, fullscreen, null, null));
+
+        driver.listeners.get(0).onState(PlaybackSession.State.CANCELLED);
+
+        assertEquals(2, driver.playCount);
+        assertEquals(1, driver.cancelCount);
+        assertEquals(handoff, host.activeSessionIdForTest());
+        assertEquals(PlaybackRequest.Kind.LIVE, driver.requests.get(1).kind);
+
+        // A duplicate/stale callback from the cancelled Preview epoch cannot restart again.
+        driver.listeners.get(0).onState(PlaybackSession.State.CANCELLED);
+        assertEquals(2, driver.playCount);
+        assertEquals(1, driver.cancelCount);
+    }
+
+    @Test public void playingPreviewSuppressionDuringFullscreenRecoveryRestartsLive() {
+        FakeDriver driver = new FakeDriver();
+        PlaybackSessionHost host = new PlaybackSessionHost(driver);
+        PlaybackSessionHost.Binding preview = host.newPreviewBinding();
+        host.attachPreview(preview, null);
+        host.requestPreview(preview, null, request("11", PlaybackRequest.Kind.PREVIEW),
+                "tv", null);
+        driver.listeners.get(0).onFirstFrame(
+                new PlaybackRoute("preview", PlaybackRoute.Engine.MEDIA3,
+                        PlaybackRoute.Transport.TS,
+                        "https://provider.example/live/11.ts",
+                        java.util.Collections.emptyMap()), 120L);
+
+        long handoff = host.promoteToFullscreen(
+                preview, null, request("11", PlaybackRequest.Kind.LIVE), "tv");
+        PlaybackSessionHost.Binding fullscreen = host.newFullscreenBinding();
+        assertTrue(host.claimFullscreen(handoff, fullscreen, null, null));
+
+        // A later re-resolve may receive provider livePreview=false. Even though the
+        // Preview had already rendered, fullscreen must replace that cancelled policy
+        // session with exactly one LIVE request.
+        driver.listeners.get(0).onState(PlaybackSession.State.CANCELLED);
+
+        assertEquals(2, driver.playCount);
+        assertEquals(1, driver.cancelCount);
+        assertEquals(PlaybackRequest.Kind.LIVE, driver.requests.get(1).kind);
+        driver.listeners.get(0).onState(PlaybackSession.State.CANCELLED);
         assertEquals(2, driver.playCount);
     }
 
@@ -240,6 +352,23 @@ public final class PlaybackSessionHostTest {
             List<Runnable> pending = new ArrayList<>(tasks);
             tasks.clear();
             for (Runnable task : pending) task.run();
+        }
+    }
+
+    private static final class FakeSessionGuard implements PlaybackSessionHost.SessionGuard {
+        int startCount;
+        int stopCount;
+        long lastStartedSessionId;
+        long lastStoppedSessionId;
+
+        @Override public void start(long sessionId) {
+            startCount++;
+            lastStartedSessionId = sessionId;
+        }
+
+        @Override public void stop(long sessionId) {
+            stopCount++;
+            lastStoppedSessionId = sessionId;
         }
     }
 }

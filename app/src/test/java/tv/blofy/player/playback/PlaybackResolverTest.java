@@ -35,19 +35,36 @@ public class PlaybackResolverTest {
     }
 
     @Test public void signedUrlRemainsLiteralAndIsNotRetriedWithContradictoryMime() throws Exception {
-        String source = "https://example.com/live/10.ts?token=A%2FB&expires=123#part";
+        String source = "https://example.com/live/10.ts?token=A%2FB&expires=123";
         PlaybackRequest request = new PlaybackRequest("p1", "example.com",
                 PlaybackRequest.Kind.LIVE, "10", source, "ts",
                 "", "", false);
 
         List<PlaybackRoute> routes = new PlaybackResolver().resolve(request);
 
-        assertEquals(2, routes.size());
+        assertEquals(1, routes.size());
         for (PlaybackRoute route : routes) {
             assertEquals(source, route.url);
             assertEquals(PlaybackRoute.Transport.TS, route.transport);
             assertFalse(route.id.contains("hls-compat"));
             assertFalse(route.id.contains("ts-compat"));
+        }
+    }
+
+    @Test public void unsafeSourceShapesAreRejectedBeforeCreatingRoutes() {
+        assertRejected("https://user:secret@example.com/live/10.ts");
+        assertRejected("https://example.com/live/10.ts#fragment");
+        assertRejected("https://example.com/live/10.ts\r\nX-Injected:true");
+    }
+
+    private static void assertRejected(String source) {
+        PlaybackRequest request = new PlaybackRequest("p1", "", PlaybackRequest.Kind.LIVE,
+                "10", source, "ts", "", "", false);
+        try {
+            new PlaybackResolver().resolve(request);
+            org.junit.Assert.fail("unsafe source was accepted");
+        } catch (PlaybackFailure expected) {
+            assertEquals("SOURCE-SCHEME", expected.code);
         }
     }
 
@@ -100,10 +117,10 @@ public class PlaybackResolverTest {
         List<PlaybackSourceCandidate> candidates = Arrays.asList(
                 new PlaybackSourceCandidate("live-ts", "https://provider.example/live/42.ts",
                         "ts", PlaybackRoute.Transport.TS, "video/mp2t",
-                        "allowed_output_formats"),
+                        "allowed_output_formats", "same-scheme", true),
                 new PlaybackSourceCandidate("live-hls", "https://cdn.example/live/42.m3u8",
                         "m3u8", PlaybackRoute.Transport.HLS, "application/x-mpegURL",
-                        "allowed_output_formats"));
+                        "allowed_output_formats", "same-scheme", true));
         PlaybackRequest request = unresolved.withProviderContract(
                 "https://provider.example/", "https://provider.example",
                 "Provider-UA", "pp_abcdefghijklmnopqrstuvwx", 3,
@@ -146,5 +163,17 @@ public class PlaybackResolverTest {
 
         assertFalse(revisionOne.profileKey("default")
                 .equals(revisionTwo.profileKey("default")));
+    }
+
+    @Test public void legacyHttpsIsMedia3OnlyWhileLegacyHttpCanUseVlc() throws Exception {
+        PlaybackRequest https = new PlaybackRequest("p1", "example.com",
+                PlaybackRequest.Kind.LIVE, "10", "https://example.com/live/10.ts", "ts",
+                "", "", false);
+        PlaybackRequest http = new PlaybackRequest("p1", "example.com",
+                PlaybackRequest.Kind.LIVE, "10", "http://example.com/live/10.ts", "ts",
+                "", "", false);
+
+        assertEquals(1, new PlaybackResolver().resolve(https).size());
+        assertEquals(2, new PlaybackResolver().resolve(http).size());
     }
 }

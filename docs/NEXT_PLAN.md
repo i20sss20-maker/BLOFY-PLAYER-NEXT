@@ -45,11 +45,25 @@ This repository replaces the accumulated patch-chain architecture with clean sou
 - public catalog keeps provider credentials and media URLs out of SQLite
 - cancellable `native-link v2`, opaque provider profiles and evidence-backed signed HLS/TS candidates
 - exact legacy route for VOD/older providers without manufacturing alternate formats
-- Media3 primary across candidates, classified LibVLC fallback and persisted best route per profile revision
+- Media3 primary across real candidates, fail-closed LibVLC compatibility routes and persisted best route per profile revision
 - shared preview/fullscreen `PlaybackCore` with Surface handoff and strict stop-before-next
 - first-frame and post-first-frame stall/ended watchdog recovery with bounded re-resolve windows
 - pinned Media3 FFmpeg build contract for AC3/EAC3/DTS; release packaging is mandatory in CI
+- fullscreen media-playback foreground service and partial WakeLock without a second player or provider connection
+- bounded local-only playback telemetry with typed stages, explicit unavailable timings and credential/URL redaction
+- coarse device capabilities without hardware identifiers, model strings or fingerprints
+- signed Remote Config foundation with strict ES256 verification, expiry, provider binding, anti-rollback and atomic cache; no trusted key means compiled defaults only
+- verified Remote Config snapshots are frozen per session and drive User-Agent, engine/transport order, VLC/preview kill switches and bounded playback/network timeouts
+- bounded Media3 `PREVIEW`, `LIVE_FAST`, `LIVE_STABLE` and `VOD` buffer profiles selected without probes or extra connections
 - D-pad/OK/touch de-duplication, deep-focus restoration and paging retry
+
+### Not yet a production-complete claim
+
+- The default build contains no Remote Config trust key, so the implemented runtime policy remains inactive. Production activation requires an external signer, deliberate public-key provisioning and a deployed control plane.
+- Provider profiles may return distinct signed endpoint hosts, but the Android client has no app-owned DoH or arbitrary DNS override. It continues to use the platform resolver.
+- mpv is not implemented and is intentionally deferred until field evidence justifies a third engine.
+- A CI/debug APK is not a production release. The final APK must use the existing signing identity and pass the certificate fingerprint gate.
+- Provider/device matrix testing, one-connection subscriptions and 20–30 minute continuous playback soaks remain required.
 
 ### Phase 0 — compatibility foundation
 - preserve `tv.blofy.player`
@@ -86,7 +100,7 @@ This repository replaces the accumulated patch-chain architecture with clean sou
 - smart preload
 - image memory+disk cache
 - device/4K profile
-- telemetry and diagnostics UI
+- telemetry and diagnostics UI (local typed summary implemented; wider UX remains)
 
 ### Phase 5 — acceptance
 - build/lint/unit tests
@@ -99,3 +113,5 @@ This repository replaces the accumulated patch-chain architecture with clean sou
 ## Release gate
 A release must fail rather than ship if the expected signing certificate does not match:
 `f54493426cd16e2fc67390c307937d5d2bb04f81201f4bad3355ae66ff4813a6`
+
+Passing unit tests, lint and APK assembly is necessary but not sufficient. The signer check and the field/soak matrix above must also pass before calling a build production-ready.

@@ -29,7 +29,9 @@ public final class StreamHealthCheck {
 
     public Result probe(PlaybackRoute route, int timeoutMs) {
         long started = System.nanoTime();
-        if (route == null || route.url.isEmpty()) return result(false, 0, "", "", started, "empty-url");
+        if (route == null || !PlaybackUrlPolicy.isSafeSource(route.url)) {
+            return result(false, 0, "", "", started, "unsafe-url");
+        }
         HttpURLConnection connection = null;
         try {
             URL current = new URL(route.url);
@@ -53,7 +55,13 @@ public final class StreamHealthCheck {
                     if (location == null || location.trim().isEmpty()) {
                         return result(false, status, type, current.toString(), started, "redirect-without-location");
                     }
-                    URL next = new URL(current, location);
+                    String resolved = PlaybackUrlPolicy.resolveRedirect(
+                            current.toString(), location);
+                    if (resolved.isEmpty()) {
+                        return result(false, status, type, current.toString(), started,
+                                "unsafe-redirect");
+                    }
+                    URL next = new URL(resolved);
                     connection.disconnect();
                     connection = null;
                     current = next;

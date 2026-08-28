@@ -51,6 +51,11 @@ public final class PlaybackSessionHost implements AutoCloseable {
         void postDelayed(Runnable task, long delayMs);
     }
 
+    interface SessionGuard {
+        void start(long sessionId);
+        void stop(long sessionId);
+    }
+
     private static final class CoreDriver implements Driver {
         private final PlaybackCore core;
 
@@ -72,6 +77,7 @@ public final class PlaybackSessionHost implements AutoCloseable {
     private final Object identity = new Object();
     private final Driver driver;
     private final GraceScheduler scheduler;
+    private final SessionGuard sessionGuard;
     private long nextSessionId = Math.max(1L, System.nanoTime() & Long.MAX_VALUE);
 
     private Binding surfaceOwner;
@@ -88,22 +94,39 @@ public final class PlaybackSessionHost implements AutoCloseable {
     private PlaybackFailure lastFailure;
     private String lastDiagnostics = "";
     private long driverEpoch;
+    private long guardedSessionId;
     private boolean driverStartedAsPreview;
     private boolean retryLiveAfterPreviewTimeout;
     private boolean closed;
 
     public PlaybackSessionHost(Context context) {
-        this(new CoreDriver(context), handlerScheduler());
+        Context app = context.getApplicationContext();
+        this.driver = new CoreDriver(app);
+        this.scheduler = handlerScheduler();
+        this.sessionGuard = new SessionGuard() {
+            @Override public void start(long sessionId) {
+                PlaybackKeepAliveService.start(app, sessionId);
+            }
+
+            @Override public void stop(long sessionId) {
+                PlaybackKeepAliveService.stop(app, sessionId);
+            }
+        };
     }
 
     PlaybackSessionHost(Driver driver) {
-        this(driver, (task, delayMs) -> {});
+        this(driver, (task, delayMs) -> {}, noOpGuard());
     }
 
     PlaybackSessionHost(Driver driver, GraceScheduler scheduler) {
+        this(driver, scheduler, noOpGuard());
+    }
+
+    PlaybackSessionHost(Driver driver, GraceScheduler scheduler, SessionGuard sessionGuard) {
         if (driver == null) throw new IllegalArgumentException("driver is required");
         this.driver = driver;
         this.scheduler = scheduler == null ? (task, delayMs) -> {} : scheduler;
+        this.sessionGuard = sessionGuard == null ? noOpGuard() : sessionGuard;
     }
 
     public synchronized Binding newPreviewBinding() {
@@ -139,6 +162,7 @@ public final class PlaybackSessionHost implements AutoCloseable {
             bindLocked(binding, surface, nextObserver);
             mode = Mode.PREVIEW;
             handoffPreviewOwner = null;
+            stopGuardLocked(activeSessionId);
             if (isReusableLocked(key)) {
                 activeRequest = request;
                 replay = snapshotLocked();
@@ -167,6 +191,7 @@ public final class PlaybackSessionHost implements AutoCloseable {
             activeRequest = request;
             mode = Mode.FULLSCREEN_PENDING;
         }
+        startGuardLocked(activeSessionId);
         return activeSessionId;
     }
 
@@ -183,6 +208,10 @@ public final class PlaybackSessionHost implements AutoCloseable {
                     && mode != Mode.FULLSCREEN_PENDING) return false;
             bindLocked(binding, surface, nextObserver);
             mode = Mode.FULLSCREEN;
+            if (state != PlaybackSession.State.FAILED
+                    && state != PlaybackSession.State.CANCELLED) {
+                startGuardLocked(activeSessionId);
+            }
             replay = snapshotLocked();
         }
         replay(nextObserver, replay);
@@ -257,7 +286,10 @@ public final class PlaybackSessionHost implements AutoCloseable {
     synchronized boolean isOwnedByForTest(Binding binding) { return surfaceOwner == binding; }
 
     private void startLocked(PlaybackRequest request, String profile, Mode nextMode) {
-        if (activeSessionId != 0L) driver.cancel(); // strict break-before-make
+        if (activeSessionId != 0L) {
+            stopGuardLocked(activeSessionId);
+            driver.cancel(); // strict break-before-make
+        }
         activeSessionId = nextSessionIdLocked();
         activeRequest = request;
         activeKey = streamKey(request);
@@ -270,6 +302,9 @@ public final class PlaybackSessionHost implements AutoCloseable {
         lastDiagnostics = "";
         retryLiveAfterPreviewTimeout = false;
         playDriverLocked(request);
+        if (nextMode == Mode.FULLSCREEN_PENDING || nextMode == Mode.FULLSCREEN) {
+            startGuardLocked(activeSessionId);
+        }
     }
 
     private void playDriverLocked(PlaybackRequest request) {
@@ -296,6 +331,24 @@ public final class PlaybackSessionHost implements AutoCloseable {
         synchronized (this) {
             if (closed || sessionId != activeSessionId || attempt != driverEpoch
                     || next == null) return;
+            if (next == PlaybackSession.State.CANCELLED
+                    && driverStartedAsPreview
+                    && activeRequest != null
+                    && activeRequest.kind == PlaybackRequest.Kind.LIVE) {
+                // A provider policy may suppress Preview after native-link while an OK press
+                // has already promoted that request. The Preview core intentionally cancels
+                // before opening the provider; replace it once with the pending LIVE request
+                // so fullscreen never claims a dead handoff.
+                retryLiveAfterPreviewTimeout = false;
+                driver.cancel();
+                state = PlaybackSession.State.RESOLVING;
+                lastRoute = null;
+                lastFirstFrameMs = 0L;
+                lastFailure = null;
+                lastDiagnostics = "";
+                playDriverLocked(activeRequest);
+                return;
+            }
             state = next;
             target = observer;
         }
@@ -337,6 +390,7 @@ public final class PlaybackSessionHost implements AutoCloseable {
                 return;
             }
             state = PlaybackSession.State.FAILED;
+            stopGuardLocked(activeSessionId);
             lastFailure = failure;
             lastDiagnostics = clean(diagnostics);
             target = observer;
@@ -377,6 +431,7 @@ public final class PlaybackSessionHost implements AutoCloseable {
 
     private void cancelLocked() {
         driverEpoch++;
+        stopGuardLocked(activeSessionId);
         driver.attach(null);
         driver.cancel();
         activeSessionId = 0L;
@@ -393,6 +448,19 @@ public final class PlaybackSessionHost implements AutoCloseable {
         surfaceOwner = null;
         handoffPreviewOwner = null;
         observer = null;
+    }
+
+    private void startGuardLocked(long sessionId) {
+        if (sessionId <= 0L || guardedSessionId == sessionId) return;
+        if (guardedSessionId > 0L) sessionGuard.stop(guardedSessionId);
+        sessionGuard.start(sessionId);
+        guardedSessionId = sessionId;
+    }
+
+    private void stopGuardLocked(long sessionId) {
+        if (sessionId <= 0L || guardedSessionId != sessionId) return;
+        sessionGuard.stop(sessionId);
+        guardedSessionId = 0L;
     }
 
     private void scheduleDetachedExpiryLocked(long sessionId, Mode expectedMode, long delayMs) {
@@ -429,6 +497,13 @@ public final class PlaybackSessionHost implements AutoCloseable {
         return handler::postDelayed;
     }
 
+    private static SessionGuard noOpGuard() {
+        return new SessionGuard() {
+            @Override public void start(long sessionId) {}
+            @Override public void stop(long sessionId) {}
+        };
+    }
+
     @Override public synchronized void close() {
         if (closed) return;
         closed = true;
@@ -440,6 +515,7 @@ public final class PlaybackSessionHost implements AutoCloseable {
         activeKey = "";
         mode = Mode.NONE;
         driverEpoch++;
+        stopGuardLocked(guardedSessionId);
         driver.close();
     }
 

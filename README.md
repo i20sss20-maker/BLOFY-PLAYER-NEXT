@@ -22,6 +22,18 @@ Clean Android TV playback architecture for BLOFY PLAYER.
 
 ## Current vertical slice
 
-NEXT.1 preserves the production device identity and activation flow, lists cloud playlists without auto-connecting, publishes paged Live refreshes atomically, and opens the last complete cache immediately. `native-link v2` supplies only real signed provider candidates and an opaque adaptive profile; preview and fullscreen hand off one application-owned player connection. Media3 is primary, LibVLC is the bounded compatibility ladder, and release CI builds the pinned FFmpeg AC3/EAC3/DTS extension. Raw playlist credentials, BLOFY cookies and provider URLs are never stored in the public catalog or sent through Intents.
+NEXT.1 preserves the production device identity and activation flow, lists cloud playlists without auto-connecting, publishes paged Live refreshes atomically, and opens the last complete cache immediately. `native-link v2` supplies only real signed provider candidates and an opaque adaptive profile; preview and fullscreen hand off one application-owned player connection. Media3 is primary. LibVLC is a bounded compatibility route only when the candidate contract explicitly marks it compatible and its redirect policy is safe; missing or invalid compatibility metadata fails closed. Release CI builds the pinned FFmpeg AC3/EAC3/DTS extension. Raw playlist credentials, BLOFY cookies and provider URLs are never stored in the public catalog or sent through Intents.
+
+Fullscreen playback is guarded by a media-playback foreground service and one partial WakeLock. The service does not own a player, resolver or second provider connection; `PlaybackSessionHost` remains the single session owner. Media3 selects bounded Preview, Live Fast, Live Stable or VOD buffers from request/transport metadata without probing the provider. Playback telemetry is bounded, typed, redacted and stored locally. It does not upload provider URLs or credentials and does not open diagnostic probe connections.
+
+The source includes an ES256-signed Remote Config runtime with strict parsing, expiry, anti-rollback and atomic caching. A verified global/provider snapshot controls User-Agent, HLS/TS selection, Media3/LibVLC order and kill switch, preview enablement and bounded network/startup/stall timeouts for one frozen playback session. Remote policy is intentionally inactive when no trusted public key is compiled into the app; the default build has no trust key and therefore uses compiled safe defaults. Supplying a signing service, private key or production Panel deployment is outside this Android repository.
+
+## Current boundaries before production release
+
+- Provider profiles and signed HLS/TS candidates are supported; candidates are never invented by changing a URL extension.
+- Multiple distinct signed provider endpoints can be attempted sequentially. There is no app-owned DoH resolver or arbitrary DNS override yet; normal requests still use the platform DNS stack.
+- mpv is not included. It remains a later compatibility-engine option after Media3/FFmpeg/LibVLC field results justify it.
+- A production APK must be signed by the existing key and pass the expected certificate check. A debug artifact is not an upgrade-compatible release.
+- Provider/device acceptance and 20–30 minute continuous-playback soak tests are still mandatory release gates.
 
 See `docs/NEXT_PLAN.md` and `docs/PLAYBACK_ARCHITECTURE.md`.

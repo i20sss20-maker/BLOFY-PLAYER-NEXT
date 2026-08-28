@@ -4,7 +4,7 @@ import java.util.Locale;
 
 public final class PlaybackFailure extends Exception {
     public enum Type {
-        NETWORK, AUTH, HTTP, TIMEOUT, SOURCE_EXPIRED, CONTAINER, CODEC,
+        NETWORK, DNS, TLS, AUTH, HTTP, TIMEOUT, SOURCE_EXPIRED, CONTAINER, CODEC,
         PLAYER, STALL, CANCELLED, STALE, UNKNOWN
     }
 

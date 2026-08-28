@@ -37,7 +37,9 @@ import tv.blofy.player.data.CatalogDatabase;
 import tv.blofy.player.data.CatalogMemoryCache;
 import tv.blofy.player.data.CatalogRepository;
 import tv.blofy.player.diagnostics.DiagnosticsActivity;
+import tv.blofy.player.diagnostics.DiagnosticsLog;
 import tv.blofy.player.live.LiveActivity;
+import tv.blofy.player.remoteconfig.RemoteConfigManager;
 
 /** Production device activation and explicit playlist connection entry point for NEXT. */
 @UnstableApi
@@ -119,6 +121,13 @@ public final class MainActivity extends Activity {
                         + BlofyApi.encode(api.deviceId())
                         + "&revision=" + selection.revision() + "&connect=0");
                 if (!isBootCurrent(generation)) return;
+                RemoteConfigManager.UpdateResult config =
+                        ((BlofyApplication) getApplication()).remoteConfig()
+                                .acceptBootstrap(bootstrap);
+                if (config.rejection != null) {
+                    DiagnosticsLog.event("REMOTE_CONFIG", "bootstrap-rejected",
+                            config.rejection.name());
+                }
                 int revision = PortalModels.revision(bootstrap);
                 List<PortalModels.Playlist> playlists = PortalModels.playlists(bootstrap);
                 String defaultId = PortalModels.defaultPlaylistId(bootstrap);

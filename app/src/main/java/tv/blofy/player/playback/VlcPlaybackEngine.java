@@ -18,6 +18,9 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
     private SurfaceView surface;
     private Listener listener;
     private boolean firstFrame;
+    private boolean videoOutputReady;
+    private boolean playbackProgressSeen;
+    private long generation;
 
     public VlcPlaybackEngine(Context context) {
         this.context = context.getApplicationContext();
@@ -34,24 +37,32 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
     }
 
     @Override public synchronized void play(PlaybackRoute route, Listener callback) throws PlaybackFailure {
-        if (route == null || route.url.isEmpty()) {
+        if (route == null || !PlaybackUrlPolicy.isSafeSource(route.url)) {
             throw new PlaybackFailure(PlaybackFailure.Type.UNKNOWN, "VLC-EMPTY-SOURCE",
-                    "empty source", 0, false, null);
+                    "missing or unsafe source", 0, false, null);
+        }
+        if (!isRedirectPolicySafe(route)) {
+            throw new PlaybackFailure(PlaybackFailure.Type.PLAYER,
+                    "VLC-REDIRECT-POLICY-REQUIRED",
+                    "vlc route is not marked no-downgrade", 0, false, null);
         }
         stop();
         listener = callback;
+        long playGeneration = ++generation;
         firstFrame = false;
+        videoOutputReady = false;
+        playbackProgressSeen = false;
         try {
             ArrayList<String> options = new ArrayList<>();
             options.add("--network-caching=1200");
             options.add("--clock-jitter=0");
             options.add("--clock-synchro=0");
             if (libVlc == null) libVlc = new LibVLC(context, options);
-            player = new MediaPlayer(libVlc);
-            attachSurface(player);
-            player.setEventListener(event -> {
-                Listener l;
-                synchronized (VlcPlaybackEngine.this) { l = listener; }
+            MediaPlayer activePlayer = new MediaPlayer(libVlc);
+            player = activePlayer;
+            attachSurface(activePlayer);
+            activePlayer.setEventListener(event -> {
+                Listener l = listenerFor(playGeneration, activePlayer, callback);
                 if (l == null) return;
                 switch (event.type) {
                     case MediaPlayer.Event.Buffering:
@@ -59,10 +70,14 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
                         break;
                     case MediaPlayer.Event.Playing:
                         l.onReady();
-                        if (!firstFrame) {
-                            firstFrame = true;
-                            l.onFirstFrame();
-                        }
+                        break;
+                    case MediaPlayer.Event.Vout:
+                        if (claimFirstVisualOutput(playGeneration, activePlayer, callback,
+                                true, event.getVoutCount())) l.onFirstFrame(true);
+                        break;
+                    case MediaPlayer.Event.TimeChanged:
+                        if (claimFirstVisualOutput(playGeneration, activePlayer, callback,
+                                false, event.getTimeChanged())) l.onFirstFrame(true);
                         break;
                     case MediaPlayer.Event.EndReached:
                         l.onEnded();
@@ -75,7 +90,6 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
                         break;
                 }
             });
-
             Media media = new Media(libVlc, Uri.parse(route.url));
             media.setHWDecoderEnabled(true, false);
             String ua = route.headers.get("User-Agent");
@@ -83,9 +97,9 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
             if (ua != null && !ua.isEmpty()) media.addOption(":http-user-agent=" + ua);
             if (referer != null && !referer.isEmpty()) media.addOption(":http-referrer=" + referer);
             media.addOption(":network-caching=1200");
-            player.setMedia(media);
+            activePlayer.setMedia(media);
             media.release();
-            player.play();
+            activePlayer.play();
         } catch (RuntimeException failure) {
             stop();
             throw new PlaybackFailure(PlaybackFailure.Type.PLAYER, "VLC-PREPARE-FAILED",
@@ -102,14 +116,50 @@ public final class VlcPlaybackEngine implements PlaybackEngine {
         } catch (RuntimeException ignored) {}
     }
 
+    private synchronized Listener listenerFor(long expectedGeneration,
+                                              MediaPlayer expectedPlayer,
+                                              Listener expectedListener) {
+        if (generation != expectedGeneration || player != expectedPlayer
+                || listener != expectedListener) return null;
+        return expectedListener;
+    }
+
+    private synchronized boolean claimFirstVisualOutput(
+            long expectedGeneration, MediaPlayer expectedPlayer, Listener expectedListener,
+            boolean voutSignal, long signalValue) {
+        if (listenerFor(expectedGeneration, expectedPlayer, expectedListener) == null) {
+            return false;
+        }
+        if (voutSignal && signalValue > 0L) videoOutputReady = true;
+        if (!voutSignal && signalValue > 0L) playbackProgressSeen = true;
+        if (!qualifiesAsFirstVisualOutput(
+                firstFrame, videoOutputReady, playbackProgressSeen)) return false;
+        firstFrame = true;
+        return true;
+    }
+
+    static boolean qualifiesAsFirstVisualOutput(
+            boolean alreadySeen, boolean videoOutputReady, boolean playbackProgressSeen) {
+        return !alreadySeen && videoOutputReady && playbackProgressSeen;
+    }
+
+    static boolean isRedirectPolicySafe(PlaybackRoute route) {
+        return route != null && PlaybackUrlPolicy.isSafeSource(route.url)
+                && route.vlcNoDowngradeGuaranteed;
+    }
+
     @Override public synchronized void stop() {
         listener = null;
-        if (player != null) {
-            try { player.stop(); } catch (RuntimeException ignored) {}
-            try { player.getVLCVout().detachViews(); } catch (RuntimeException ignored) {}
-            try { player.release(); } catch (RuntimeException ignored) {}
-            player = null;
-        }
+        generation++;
+        firstFrame = false;
+        videoOutputReady = false;
+        playbackProgressSeen = false;
+        MediaPlayer closing = player;
+        player = null;
+        if (closing == null) return;
+        try { closing.stop(); } catch (RuntimeException ignored) {}
+        try { closing.getVLCVout().detachViews(); } catch (RuntimeException ignored) {}
+        try { closing.release(); } catch (RuntimeException ignored) {}
     }
 
     @Override public synchronized boolean isPlaying() {

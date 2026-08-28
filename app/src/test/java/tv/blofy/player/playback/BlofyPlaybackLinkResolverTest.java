@@ -45,8 +45,7 @@ public class BlofyPlaybackLinkResolverTest {
         assertEquals("legacy-exact", resolved.candidates.get(0).id);
         assertEquals(PlaybackRoute.Transport.TS, resolved.candidates.get(0).transport);
         List<PlaybackRoute> routes = new PlaybackResolver().resolve(resolved);
-        assertEquals(2, routes.size());
-        assertEquals(routes.get(0).url, routes.get(1).url);
+        assertEquals(1, routes.size());
         assertTrue(routes.stream().noneMatch(route -> route.id.contains("hls")));
     }
 
@@ -69,8 +68,50 @@ public class BlofyPlaybackLinkResolverTest {
         assertEquals(1, resolved.candidates.size());
         assertEquals(PlaybackRoute.Transport.DIRECT, resolved.candidates.get(0).transport);
         List<PlaybackRoute> routes = new PlaybackResolver().resolve(resolved);
-        assertEquals(2, routes.size());
+        assertEquals(1, routes.size());
         assertEquals(url, routes.get(0).url);
-        assertEquals(url, routes.get(1).url);
+    }
+
+    @Test public void signedExactHttpAllowsVlcWithoutGrantingItToHttps() throws Exception {
+        PlaybackRequest request = new PlaybackRequest("playlist", "",
+                PlaybackRequest.Kind.LIVE, "42", "", "ts", "", "", false);
+
+        PlaybackRequest resolved = BlofyPlaybackLinkResolver.resolveV2Contract(
+                request, "pp_abcdefghijklmnopqrstuvwx", 1,
+                PlaybackConnectionPolicy.UNKNOWN, Collections.emptyList(),
+                "http://provider.example/live/42.ts", "ts", "", "", "");
+
+        List<PlaybackRoute> routes = new PlaybackResolver().resolve(resolved);
+        assertEquals(2, routes.size());
+        assertEquals(PlaybackRoute.Engine.VLC, routes.get(1).engine);
+    }
+
+    @Test public void redirectMetadataFailsClosedForVlc() throws Exception {
+        List<PlaybackSourceCandidate> parsed = java.util.Arrays.asList(
+                candidate("http-upgrade", "http://provider.example/live/1.ts",
+                        "upgrade-only", true),
+                candidate("https-disabled", "https://provider.example/live/2.ts",
+                        "same-scheme", false),
+                candidate("unknown-policy", "http://provider.example/live/3.ts",
+                        "anything-goes", true));
+
+        assertEquals(3, parsed.size());
+        assertTrue(parsed.get(0).vlcNoDowngradeGuaranteed());
+        assertTrue(!parsed.get(1).vlcNoDowngradeGuaranteed());
+        assertTrue(!parsed.get(2).vlcNoDowngradeGuaranteed());
+    }
+
+    @Test public void compatibilityGrantsRequireRealJsonBooleans() {
+        assertTrue(BlofyPlaybackLinkResolver.strictTrue(Boolean.TRUE));
+        assertTrue(!BlofyPlaybackLinkResolver.strictTrue(Boolean.FALSE));
+        assertTrue(!BlofyPlaybackLinkResolver.strictTrue("true"));
+        assertTrue(!BlofyPlaybackLinkResolver.strictTrue(1));
+        assertTrue(!BlofyPlaybackLinkResolver.strictTrue(null));
+    }
+
+    private static PlaybackSourceCandidate candidate(
+            String id, String url, String redirectPolicy, boolean vlcCompatible) {
+        return new PlaybackSourceCandidate(id, url, "ts", PlaybackRoute.Transport.TS,
+                "video/mp2t", "allowed_output_formats", redirectPolicy, vlcCompatible);
     }
 }

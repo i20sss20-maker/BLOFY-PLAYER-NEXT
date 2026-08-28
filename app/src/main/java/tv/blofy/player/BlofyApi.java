@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import tv.blofy.player.playback.PlaybackUrlPolicy;
+
 /** Device-authenticated client for the BLOFY portal. Provider credentials never leave it. */
 public final class BlofyApi {
     private static final String PREFS = "blofy_native_http";
@@ -135,11 +137,17 @@ public final class BlofyApi {
     }
 
     public JSONObject getPlayback(String path, Cancellation cancellation) throws Exception {
+        return getPlayback(path, cancellation, PLAYBACK_LINK_TIMEOUT_MS);
+    }
+
+    public JSONObject getPlayback(String path, Cancellation cancellation,
+                                  long totalTimeoutMs) throws Exception {
         if (!path.startsWith("/api/native-link/")) {
             throw new IllegalArgumentException("getPlayback requires a native-link path");
         }
         Cancellation active = cancellation == null ? new Cancellation() : cancellation;
-        long deadline = SystemClock.elapsedRealtime() + PLAYBACK_LINK_TIMEOUT_MS;
+        long boundedTimeout = Math.max(1500L, Math.min(8000L, totalTimeoutMs));
+        long deadline = SystemClock.elapsedRealtime() + boundedTimeout;
         JSONObject result = request("GET", path, null, deadline, active);
 
         // v2 advertises only evidence-backed signed candidates. Resolve each BLOFY
@@ -282,13 +290,10 @@ public final class BlofyApi {
         if (status < 300 || status >= 400 || location == null || location.isEmpty()) {
             throw new ApiException(status, "تعذر استخراج رابط المصدر المباشر من BLOFY.");
         }
-        URL target = new URL(location);
-        String scheme = target.getProtocol();
-        if (target.getHost() == null || target.getHost().isEmpty()
-                || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+        if (!PlaybackUrlPolicy.isSafeSource(location)) {
             throw new ApiException(403, "رابط المصدر المباشر غير صالح.");
         }
-        return target.toString();
+        return location.trim();
     }
 
     private HttpURLConnection open(String path, String method, long deadline) throws Exception {

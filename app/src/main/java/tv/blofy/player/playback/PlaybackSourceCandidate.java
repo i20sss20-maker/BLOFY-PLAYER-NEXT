@@ -10,19 +10,42 @@ public final class PlaybackSourceCandidate {
     public final PlaybackRoute.Transport transport;
     public final String mimeType;
     public final String evidence;
+    public final String redirectPolicy;
+    public final boolean vlcCompatible;
 
     public PlaybackSourceCandidate(String id, String url, String extension,
                                    PlaybackRoute.Transport transport, String mimeType,
                                    String evidence) {
+        this(id, url, extension, transport, mimeType, evidence,
+                "same-scheme", false);
+    }
+
+    public PlaybackSourceCandidate(String id, String url, String extension,
+                                   PlaybackRoute.Transport transport, String mimeType,
+                                   String evidence, String redirectPolicy,
+                                   boolean vlcCompatible) {
         this.id = clean(id);
         this.url = clean(url);
         this.extension = normalizeExtension(extension);
         this.transport = transport == null ? PlaybackRoute.Transport.DIRECT : transport;
         this.mimeType = clean(mimeType);
         this.evidence = clean(evidence);
+        String redirects = clean(redirectPolicy).toLowerCase(Locale.US);
+        boolean knownRedirectPolicy = "upgrade-only".equals(redirects)
+                || "same-scheme".equals(redirects);
+        this.redirectPolicy = "upgrade-only".equals(redirects)
+                ? "upgrade-only" : "same-scheme";
+        this.vlcCompatible = knownRedirectPolicy && vlcCompatible;
         if (this.id.isEmpty() || this.url.isEmpty()) {
             throw new IllegalArgumentException("candidate id and URL are required");
         }
+    }
+
+    boolean vlcNoDowngradeGuaranteed() {
+        if (!vlcCompatible) return false;
+        if ("same-scheme".equals(redirectPolicy)) return true;
+        return "upgrade-only".equals(redirectPolicy)
+                && url.regionMatches(true, 0, "http://", 0, 7);
     }
 
     static PlaybackRoute.Transport parseTransport(String value) {

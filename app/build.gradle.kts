@@ -12,6 +12,22 @@ val portalUrl = providers.gradleProperty("BLOFY_BASE_URL")
     .orElse(providers.environmentVariable("BLOFY_BASE_URL"))
     .orElse("https://blofy-player-2026-production.up.railway.app")
 
+// Empty by default: builds without an explicitly injected production trust
+// anchor reject every remote policy and keep compiled-safe defaults.
+val remoteConfigKeyId = providers.gradleProperty("BLOFY_REMOTE_CONFIG_KEY_ID")
+    .orElse(providers.environmentVariable("BLOFY_REMOTE_CONFIG_KEY_ID"))
+    .orElse("")
+val remoteConfigPublicKey = providers.gradleProperty("BLOFY_REMOTE_CONFIG_PUBLIC_KEY_SPKI")
+    .orElse(providers.environmentVariable("BLOFY_REMOTE_CONFIG_PUBLIC_KEY_SPKI"))
+    .orElse("")
+val configuredRemoteConfigKeyId = remoteConfigKeyId.get().trim()
+    .takeIf { it.matches(Regex("[A-Za-z0-9._-]{1,64}")) }
+    .orEmpty()
+val configuredRemoteConfigPublicKey = remoteConfigPublicKey.get()
+    .replace(Regex("\\s+"), "")
+    .takeIf { it.matches(Regex("[A-Za-z0-9_+/=-]*")) }
+    .orEmpty()
+
 val ffmpegLockFile = rootProject.file("config/media3-ffmpeg.properties")
 val ffmpegLock = Properties().apply {
     ffmpegLockFile.inputStream().use(::load)
@@ -33,6 +49,8 @@ android {
         versionCode = 1001001
         versionName = "2026.08-NEXT.1"
         buildConfigField("String", "BLOFY_BASE_URL", quoted(portalUrl.get().trimEnd('/')))
+        buildConfigField("String", "BLOFY_REMOTE_CONFIG_KEY_ID", quoted(configuredRemoteConfigKeyId))
+        buildConfigField("String", "BLOFY_REMOTE_CONFIG_PUBLIC_KEY_SPKI", quoted(configuredRemoteConfigPublicKey))
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")

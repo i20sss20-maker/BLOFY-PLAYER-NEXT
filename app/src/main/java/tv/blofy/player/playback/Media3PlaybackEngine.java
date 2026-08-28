@@ -11,6 +11,7 @@ import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
@@ -22,6 +23,7 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
     private ExoPlayer player;
     private SurfaceView surface;
     private Listener listener;
+    private long generation;
 
     public Media3PlaybackEngine(Context context) {
         this.context = context.getApplicationContext();
@@ -35,30 +37,43 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
         }
     }
 
-    @Override public synchronized void play(PlaybackRoute route, Listener callback) throws PlaybackFailure {
-        if (route == null || route.url.isEmpty()) {
+    @Override public synchronized void play(PlaybackRoute route, Listener callback)
+            throws PlaybackFailure {
+        play(route, PlaybackBufferProfile.VOD, callback);
+    }
+
+    @Override public synchronized void play(PlaybackRoute route,
+                                            PlaybackBufferProfile bufferProfile,
+                                            Listener callback) throws PlaybackFailure {
+        if (route == null || !PlaybackUrlPolicy.isSafeSource(route.url)) {
             throw new PlaybackFailure(PlaybackFailure.Type.UNKNOWN, "MEDIA3-EMPTY-SOURCE",
-                    "empty source", 0, false, null);
+                    "missing or unsafe source", 0, false, null);
         }
         stop();
         listener = callback;
+        long playGeneration = ++generation;
         try {
             DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
-                    .setAllowCrossProtocolRedirects(true)
-                    .setConnectTimeoutMs(8000)
-                    .setReadTimeoutMs(12000);
+                    // The Media3 switch is stricter than the shared redirect
+                    // policy: no cross-protocol redirect means HTTPS can never
+                    // be downgraded without adding a custom network stack.
+                    .setAllowCrossProtocolRedirects(allowCrossProtocolRedirects())
+                    .setConnectTimeoutMs(route.connectTimeoutMs)
+                    .setReadTimeoutMs(route.readTimeoutMs);
             if (!route.headers.isEmpty()) http.setDefaultRequestProperties(route.headers);
 
             DefaultMediaSourceFactory sourceFactory = new DefaultMediaSourceFactory(context)
                     .setDataSourceFactory(http);
             DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(context)
                     .setExtensionRendererMode(extensionRendererMode());
-            player = new ExoPlayer.Builder(context, renderersFactory)
+            ExoPlayer activePlayer = new ExoPlayer.Builder(context, renderersFactory)
                     .setMediaSourceFactory(sourceFactory)
+                    .setLoadControl(createLoadControl(bufferProfile))
                     .build();
-            player.addListener(new Player.Listener() {
+            player = activePlayer;
+            activePlayer.addListener(new Player.Listener() {
                 @Override public void onPlaybackStateChanged(int state) {
-                    Listener l = listener;
+                    Listener l = listenerFor(playGeneration, activePlayer, callback);
                     if (l == null) return;
                     if (state == Player.STATE_BUFFERING) l.onBuffering(true);
                     if (state == Player.STATE_READY) {
@@ -69,22 +84,22 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
                 }
 
                 @Override public void onRenderedFirstFrame() {
-                    Listener l = listener;
+                    Listener l = listenerFor(playGeneration, activePlayer, callback);
                     if (l != null) l.onFirstFrame();
                 }
 
                 @Override public void onPlayerError(PlaybackException error) {
-                    Listener l = listener;
+                    Listener l = listenerFor(playGeneration, activePlayer, callback);
                     if (l != null) l.onError(map(error));
                 }
             });
-            if (surface != null) player.setVideoSurfaceView(surface);
+            if (surface != null) activePlayer.setVideoSurfaceView(surface);
             MediaItem.Builder item = new MediaItem.Builder().setUri(Uri.parse(route.url));
             String mime = mime(route.transport);
             if (mime != null) item.setMimeType(mime);
-            player.setMediaItem(item.build());
-            player.setPlayWhenReady(true);
-            player.prepare();
+            activePlayer.setMediaItem(item.build());
+            activePlayer.setPlayWhenReady(true);
+            activePlayer.prepare();
         } catch (RuntimeException failure) {
             stop();
             throw new PlaybackFailure(PlaybackFailure.Type.PLAYER, "MEDIA3-PREPARE-FAILED",
@@ -94,11 +109,21 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
 
     @Override public synchronized void stop() {
         listener = null;
-        if (player == null) return;
-        try { player.stop(); } catch (RuntimeException ignored) {}
-        try { player.clearVideoSurface(); } catch (RuntimeException ignored) {}
-        try { player.release(); } catch (RuntimeException ignored) {}
+        generation++;
+        ExoPlayer closing = player;
         player = null;
+        if (closing == null) return;
+        try { closing.stop(); } catch (RuntimeException ignored) {}
+        try { closing.clearVideoSurface(); } catch (RuntimeException ignored) {}
+        try { closing.release(); } catch (RuntimeException ignored) {}
+    }
+
+    private synchronized Listener listenerFor(long expectedGeneration,
+                                              ExoPlayer expectedPlayer,
+                                              Listener expectedListener) {
+        if (generation != expectedGeneration || player != expectedPlayer
+                || listener != expectedListener) return null;
+        return expectedListener;
     }
 
     @Override public synchronized boolean isPlaying() {
@@ -118,6 +143,25 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
         return DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER;
     }
 
+    static boolean allowCrossProtocolRedirects() {
+        return false;
+    }
+
+    /** Package-visible factory keeps the exact Media3 configuration under regression test. */
+    static DefaultLoadControl createLoadControl(PlaybackBufferProfile requested) {
+        PlaybackBufferProfile profile = requested == null
+                ? PlaybackBufferProfile.VOD : requested;
+        return new DefaultLoadControl.Builder()
+                .setBufferDurationsMsForStreaming(
+                        profile.minBufferMs,
+                        profile.maxBufferMs,
+                        profile.bufferForPlaybackMs,
+                        profile.bufferAfterRebufferMs)
+                .setPrioritizeTimeOverSizeThresholdsForStreaming(
+                        profile.prioritizeTimeOverSize)
+                .build();
+    }
+
     private static String mime(PlaybackRoute.Transport transport) {
         if (transport == PlaybackRoute.Transport.HLS) return MimeTypes.APPLICATION_M3U8;
         if (transport == PlaybackRoute.Transport.TS) return MimeTypes.VIDEO_MP2T;
@@ -135,10 +179,12 @@ public final class Media3PlaybackEngine implements PlaybackEngine {
         String diagnostic = "MEDIA3-PLAYER-" + code;
         if (code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
                 || code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT) {
-            type = code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
-                    ? PlaybackFailure.Type.TIMEOUT : PlaybackFailure.Type.NETWORK;
-            diagnostic = code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
-                    ? "MEDIA3-NETWORK-TIMEOUT" : "MEDIA3-NETWORK";
+            type = PlaybackFailureClassifier.networkType(error,
+                    code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT);
+            diagnostic = type == PlaybackFailure.Type.DNS ? "MEDIA3-DNS"
+                    : type == PlaybackFailure.Type.TLS ? "MEDIA3-TLS"
+                    : type == PlaybackFailure.Type.TIMEOUT ? "MEDIA3-NETWORK-TIMEOUT"
+                    : "MEDIA3-NETWORK";
         } else if (code == PlaybackException.ERROR_CODE_DECODING_FAILED
                 || code == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED) {
             type = PlaybackFailure.Type.CODEC;

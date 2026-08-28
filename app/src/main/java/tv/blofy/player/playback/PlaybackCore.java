@@ -78,45 +78,61 @@ public final class PlaybackCore implements AutoCloseable {
     }
 
     public void play(PlaybackRequest request, String deviceProfile, Listener ui) {
+        final PlaybackRequest configured = request == null
+                ? null : linkResolver.withCachedConfig(request);
         final PlaybackSession session;
         synchronized (this) {
             if (closed) return;
-            session = coordinator.begin(request);
+            session = coordinator.begin(configured);
             cancelAttemptLocked();
             resetRecoveryLocked(session.epoch, deviceProfile);
         }
         final PlaybackDiagnostics diagnostics = new PlaybackDiagnostics();
         main.post(() -> stopEnginesIfCurrent(session.epoch));
-        if (request == null) {
+        if (configured == null) {
+            diagnostics.mark(PlaybackDiagnostics.Stage.SESSION_START, 0, "UNKNOWN");
             finishFailure(session, diagnostics,
                     new PlaybackFailure(PlaybackFailure.Type.UNKNOWN, "REQUEST-NULL",
                             "request is null", 0, false, null), ui);
             return;
         }
-        diagnostics.mark("session-start", request.kind.name());
+        diagnostics.mark(PlaybackDiagnostics.Stage.SESSION_START, 0, configured.kind.name());
         session.state(PlaybackSession.State.RESOLVING);
         dispatchState(session.epoch, ui, PlaybackSession.State.RESOLVING);
 
-        if (request.sourceUrl.isEmpty()) {
-            resolveLink(session, diagnostics, request, deviceProfile, ui);
+        if (configured.sourceUrl.isEmpty()) {
+            resolveLink(session, diagnostics, configured, deviceProfile, ui);
         } else {
-            continueResolved(session, diagnostics, request, deviceProfile, ui);
+            diagnostics.mark(PlaybackDiagnostics.Stage.RESOLVE_RESULT, 0,
+                    0L, "pre_resolved");
+            continueResolved(session, diagnostics, configured, deviceProfile, ui);
         }
     }
 
     private void resolveLink(PlaybackSession session, PlaybackDiagnostics diagnostics,
                              PlaybackRequest request, String deviceProfile, Listener ui) {
+        int resolveCycle = diagnostics.nextResolve();
+        long resolveStartedAtMs = SystemClock.elapsedRealtime();
+        diagnostics.mark(PlaybackDiagnostics.Stage.RESOLVE_START, 0,
+                "cycle:" + resolveCycle + ",kind:" + request.kind.name());
         BlofyApi.Cancellation cancellation = new BlofyApi.Cancellation();
         session.cancellation(cancellation::cancel);
         Runnable work = () -> {
             try {
                 PlaybackRequest resolved = linkResolver.resolve(request, cancellation);
                 if (!coordinator.isCurrent(session.epoch)) return;
-                diagnostics.mark("link-resolved", resolved.extension);
+                long durationMs = Math.max(0L,
+                        SystemClock.elapsedRealtime() - resolveStartedAtMs);
+                diagnostics.mark(PlaybackDiagnostics.Stage.RESOLVE_RESULT, 0,
+                        durationMs, "cycle:" + resolveCycle + ",ext:" + resolved.extension);
                 main.post(() -> continueResolved(
                         session, diagnostics, resolved, deviceProfile, ui));
             } catch (PlaybackFailure failure) {
                 if (!coordinator.isCurrent(session.epoch)) return;
+                long durationMs = Math.max(0L,
+                        SystemClock.elapsedRealtime() - resolveStartedAtMs);
+                diagnostics.mark(PlaybackDiagnostics.Stage.RESOLVE_FAILURE, 0,
+                        durationMs, "cycle:" + resolveCycle + ",code:" + failure.code);
                 main.post(() -> finishFailure(session, diagnostics, failure, ui));
             }
         };
@@ -139,25 +155,67 @@ public final class PlaybackCore implements AutoCloseable {
     private void continueResolved(PlaybackSession session, PlaybackDiagnostics diagnostics,
                                   PlaybackRequest request, String deviceProfile, Listener ui) {
         if (!coordinator.isCurrent(session.epoch)) return;
-        if (remainingStartupMs(session) <= 0L) {
+        if (shouldSuppressPreview(request)) {
+            suppressPreview(session, ui);
+            return;
+        }
+        PlaybackBudgets budgets = PlaybackBudgets.forRequest(request);
+        if (remainingStartupMs(session, budgets) <= 0L) {
             finishFailure(session, diagnostics, PlaybackFailure.timeout("session"), ui);
             return;
         }
+        long routesStartedAtMs = SystemClock.elapsedRealtime();
         List<PlaybackRoute> routes;
         try {
             routes = resolver.resolve(request);
-            routes = rankIfOpen(session.epoch, request.profileKey(deviceProfile), routes);
+            routes = rankIfOpen(session.epoch, request.profileKey(deviceProfile),
+                    request, routes);
             if (routes == null) return;
         } catch (PlaybackFailure failure) {
             finishFailure(session, diagnostics, failure, ui);
             return;
         }
-        diagnostics.mark("resolve-result", "routes=" + routes.size());
-        startRoute(session, diagnostics, routes, 0, request.profileKey(deviceProfile), ui);
+        diagnostics.mark(PlaybackDiagnostics.Stage.ROUTES_READY, 0,
+                Math.max(0L, SystemClock.elapsedRealtime() - routesStartedAtMs),
+                "routes:" + routes.size());
+        startRoute(session, diagnostics, routes, 0, request.profileKey(deviceProfile),
+                budgets, ui);
+    }
+
+    /** Provider policy arrives after native-link but before any provider engine is started. */
+    public static boolean shouldSuppressPreview(PlaybackRequest request) {
+        return request != null && request.kind == PlaybackRequest.Kind.PREVIEW
+                && request.remoteConfig != null
+                && !request.remoteConfig.effective.feature("livePreview");
+    }
+
+    private void suppressPreview(PlaybackSession session, Listener ui) {
+        synchronized (this) {
+            if (closed || !coordinator.isCurrent(session.epoch)) return;
+            session.state(PlaybackSession.State.CANCELLED);
+        }
+        // continueResolved runs on main for native-link and normal UI calls. Update the
+        // host before invalidating the epoch so a later fullscreen press starts fresh.
+        if (ui != null) {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                ui.onState(PlaybackSession.State.CANCELLED);
+            } else {
+                main.post(() -> ui.onState(PlaybackSession.State.CANCELLED));
+            }
+        }
+        synchronized (this) {
+            if (!closed && coordinator.isCurrent(session.epoch)) {
+                coordinator.cancelCurrent();
+                cancelAttemptLocked();
+                recoveryDeadlineMs = 0L;
+            }
+        }
+        main.post(this::stopEnginesIfIdle);
     }
 
     private void startRoute(PlaybackSession session, PlaybackDiagnostics diagnostics,
-                            List<PlaybackRoute> routes, int index, String profileKey, Listener ui) {
+                            List<PlaybackRoute> routes, int index, String profileKey,
+                            PlaybackBudgets budgets, Listener ui) {
         if (!coordinator.isCurrent(session.epoch)) return;
         if (index >= routes.size()) {
             finishFailure(session, diagnostics,
@@ -169,91 +227,181 @@ public final class PlaybackCore implements AutoCloseable {
         PlaybackRoute route = routes.get(index);
         PlaybackEngine engine = route.engine == PlaybackRoute.Engine.VLC ? vlc : media3;
         PlaybackEngine other = route.engine == PlaybackRoute.Engine.VLC ? media3 : vlc;
-        PlaybackBudgets budgets = PlaybackBudgets.forRequest(session.request);
+        PlaybackBufferProfile bufferProfile = PlaybackBufferProfile.select(
+                session.request, route);
         long routeStarted = SystemClock.elapsedRealtime();
+        int telemetryAttempt = diagnostics.nextAttempt();
 
         synchronized (this) {
             if (closed || !coordinator.isCurrent(session.epoch)) return;
             cancelAttemptLocked();
-            activeAttempt = new Attempt(session.epoch, route, engine, index);
+            activeAttempt = new Attempt(session.epoch, route, engine, index, telemetryAttempt);
         }
         session.state(PlaybackSession.State.PREPARING);
-        diagnostics.mark("route-start", route.id + ":" + engine.name());
-        dispatchState(session.epoch, ui, PlaybackSession.State.PREPARING);
+        String attemptDetail = "route:" + route.id + ",engine:" + engine.name()
+                + ",transport:" + route.transport.name()
+                + ",buffer:" + bufferProfile.name()
+                + ",buffer_applied:" + (route.engine == PlaybackRoute.Engine.MEDIA3 ? "1" : "0");
+        diagnostics.mark(PlaybackDiagnostics.Stage.ATTEMPT_START,
+                telemetryAttempt, attemptDetail);
+        // The current Media3/LibVLC transports do not expose these phases. Record that fact
+        // explicitly instead of probing the provider or inventing timings.
+        diagnostics.unavailable(PlaybackDiagnostics.Stage.DNS,
+                telemetryAttempt, "engine:" + engine.name());
+        diagnostics.unavailable(PlaybackDiagnostics.Stage.CONNECT,
+                telemetryAttempt, "engine:" + engine.name());
+        diagnostics.unavailable(PlaybackDiagnostics.Stage.FIRST_BYTE,
+                telemetryAttempt, "engine:" + engine.name());
+        diagnostics.unavailable(PlaybackDiagnostics.Stage.AUDIO_DECODER,
+                telemetryAttempt, "engine:" + engine.name());
+        diagnostics.unavailable(PlaybackDiagnostics.Stage.VIDEO_DECODER,
+                telemetryAttempt, "engine:" + engine.name());
+        dispatchAttemptState(session.epoch, route.id, telemetryAttempt,
+                ui, PlaybackSession.State.PREPARING);
 
         main.post(() -> {
-            if (!stopOtherEngineIfActive(session.epoch, route.id, other)) return;
+            if (!stopOtherEngineIfActive(
+                    session.epoch, route.id, telemetryAttempt, other)) return;
             try {
                 engine.attach(surface);
-                engine.play(route, new PlaybackEngine.Listener() {
+                engine.play(route, bufferProfile, new PlaybackEngine.Listener() {
+                    @Override public void onNetworkTiming(
+                            PlaybackEngine.NetworkStage stage, long durationMs,
+                            boolean available) {
+                        if (!coordinator.isCurrent(session.epoch)
+                                || !isActive(session.epoch, route.id, telemetryAttempt)
+                                || stage == null) return;
+                        PlaybackDiagnostics.Stage diagnosticStage;
+                        if (stage == PlaybackEngine.NetworkStage.DNS) {
+                            diagnosticStage = PlaybackDiagnostics.Stage.DNS;
+                        } else if (stage == PlaybackEngine.NetworkStage.CONNECT) {
+                            diagnosticStage = PlaybackDiagnostics.Stage.CONNECT;
+                        } else {
+                            diagnosticStage = PlaybackDiagnostics.Stage.FIRST_BYTE;
+                        }
+                        diagnostics.mark(diagnosticStage, telemetryAttempt,
+                                durationMs, available, "engine:" + engine.name());
+                    }
+
+                    @Override public void onDecoderInitialized(
+                            PlaybackEngine.DecoderKind kind, String name,
+                            long durationMs, boolean estimated) {
+                        if (!coordinator.isCurrent(session.epoch)
+                                || !isActive(session.epoch, route.id, telemetryAttempt)) return;
+                        PlaybackDiagnostics.Stage stage = kind == PlaybackEngine.DecoderKind.AUDIO
+                                ? PlaybackDiagnostics.Stage.AUDIO_DECODER
+                                : PlaybackDiagnostics.Stage.VIDEO_DECODER;
+                        diagnostics.mark(stage, telemetryAttempt, durationMs, true,
+                                "engine:" + engine.name() + ",decoder:" + name
+                                        + ",estimated:" + estimated);
+                    }
+
                     @Override public void onReady() {
-                        if (!coordinator.isCurrent(session.epoch) || !isActive(session.epoch, route.id)) return;
-                        session.state(PlaybackSession.State.BUFFERING);
-                        diagnostics.mark("player-ready", route.id);
-                        dispatchState(session.epoch, ui, PlaybackSession.State.BUFFERING);
+                        int ready = acceptReady(
+                                session.epoch, route.id, telemetryAttempt, session);
+                        if (ready < 0) return;
+                        diagnostics.mark(PlaybackDiagnostics.Stage.PLAYER_READY,
+                                telemetryAttempt,
+                                Math.max(0L, SystemClock.elapsedRealtime() - routeStarted),
+                                "route:" + route.id);
+                        if (ready > 0) {
+                            dispatchAttemptState(session.epoch, route.id, telemetryAttempt,
+                                    ui, PlaybackSession.State.BUFFERING);
+                        }
                     }
 
                     @Override public void onFirstFrame() {
+                        acceptFirstFrame(false);
+                    }
+
+                    @Override public void onFirstFrame(boolean estimated) {
+                        acceptFirstFrame(estimated);
+                    }
+
+                    private void acceptFirstFrame(boolean estimated) {
                         if (!coordinator.isCurrent(session.epoch)
-                                || !claimFirstFrame(session.epoch, route.id)) return;
-                        long elapsed = SystemClock.elapsedRealtime() - routeStarted;
+                                || !claimFirstFrame(
+                                session.epoch, route.id, telemetryAttempt)) return;
+                        long elapsed = Math.max(0L,
+                                SystemClock.elapsedRealtime() - routeStarted);
                         if (!recordSuccessIfOpen(
                                 session.epoch, profileKey, route.id, elapsed)) return;
                         session.state(PlaybackSession.State.PLAYING);
-                        diagnostics.mark("first-frame", route.id + ":" + elapsed + "ms");
-                        dispatchState(session.epoch, ui, PlaybackSession.State.PLAYING);
+                        diagnostics.mark(PlaybackDiagnostics.Stage.FIRST_FRAME,
+                                telemetryAttempt, elapsed,
+                                "route:" + route.id + ",estimated:" + estimated);
+                        dispatchAttemptState(session.epoch, route.id, telemetryAttempt,
+                                ui, PlaybackSession.State.PLAYING);
                         main.post(() -> {
-                            if (coordinator.isCurrent(session.epoch) && ui != null) ui.onFirstFrame(route, elapsed);
+                            if (isActive(session.epoch, route.id, telemetryAttempt)
+                                    && ui != null) ui.onFirstFrame(route, elapsed);
                         });
                         armStallWatchdog(session, diagnostics, routes, index, profileKey, ui, budgets);
                     }
 
                     @Override public void onBuffering(boolean buffering) {
-                        if (!coordinator.isCurrent(session.epoch) || !isActive(session.epoch, route.id)) return;
-                        diagnostics.mark(buffering ? "buffering-start" : "buffering-end", route.id);
+                        if (!coordinator.isCurrent(session.epoch)
+                                || !isActive(session.epoch, route.id, telemetryAttempt)) return;
+                        diagnostics.mark(buffering
+                                        ? PlaybackDiagnostics.Stage.BUFFERING_START
+                                        : PlaybackDiagnostics.Stage.BUFFERING_END,
+                                telemetryAttempt, "route:" + route.id);
                     }
 
                     @Override public void onEnded() {
-                        if (!coordinator.isCurrent(session.epoch) || !isActive(session.epoch, route.id)) return;
-                        diagnostics.mark("ended", route.id);
+                        if (!coordinator.isCurrent(session.epoch)
+                                || !isActive(session.epoch, route.id, telemetryAttempt)) return;
+                        diagnostics.mark(PlaybackDiagnostics.Stage.ENDED,
+                                telemetryAttempt, "route:" + route.id);
                         if (session.request.kind == PlaybackRequest.Kind.LIVE
                                 || session.request.kind == PlaybackRequest.Kind.PREVIEW) {
-                            routeFailed(session, diagnostics, routes, index, profileKey, ui,
-                                    route, new PlaybackFailure(PlaybackFailure.Type.NETWORK,
+                            routeFailed(session, diagnostics, routes, index, profileKey,
+                                    budgets, ui,
+                                    route, telemetryAttempt,
+                                    new PlaybackFailure(PlaybackFailure.Type.NETWORK,
                                     "LIVE-STREAM-ENDED", "live stream ended unexpectedly",
                                     0, true, null));
                         } else {
-                            markEnded(session.epoch, route.id);
+                            markEnded(session.epoch, route.id, telemetryAttempt);
                         }
                     }
 
                     @Override public void onError(PlaybackFailure failure) {
-                        if (!coordinator.isCurrent(session.epoch) || !isActive(session.epoch, route.id)) return;
-                        routeFailed(session, diagnostics, routes, index, profileKey, ui, route, failure);
+                        if (!coordinator.isCurrent(session.epoch)
+                                || !isActive(session.epoch, route.id, telemetryAttempt)) return;
+                        routeFailed(session, diagnostics, routes, index, profileKey,
+                                budgets, ui,
+                                route, telemetryAttempt, failure);
                     }
                 });
-                armStartupTimeout(session, diagnostics, routes, index, profileKey, ui, route, budgets);
+                armStartupTimeout(session, diagnostics, routes, index, profileKey, ui,
+                        route, budgets, telemetryAttempt);
             } catch (PlaybackFailure failure) {
-                routeFailed(session, diagnostics, routes, index, profileKey, ui, route, failure);
+                routeFailed(session, diagnostics, routes, index, profileKey,
+                        budgets, ui,
+                        route, telemetryAttempt, failure);
             }
         });
     }
 
     private void armStartupTimeout(PlaybackSession session, PlaybackDiagnostics diagnostics,
                                    List<PlaybackRoute> routes, int index, String profileKey,
-                                   Listener ui, PlaybackRoute route, PlaybackBudgets budgets) {
+                                   Listener ui, PlaybackRoute route, PlaybackBudgets budgets,
+                                   int telemetryAttempt) {
         long delayMs = Math.max(1L, Math.min(budgets.firstFrameMs,
-                remainingStartupMs(session)));
+                remainingStartupMs(session, budgets)));
         synchronized (this) {
             if (closed || activeAttempt == null || activeAttempt.epoch != session.epoch
+                    || activeAttempt.telemetryAttempt != telemetryAttempt
                     || !activeAttempt.route.id.equals(route.id)
                     || activeAttempt.firstFrameSeen) return;
             try {
                 activeAttempt.startupTimeout = timers.schedule(() -> {
                     if (!coordinator.isCurrent(session.epoch)
-                            || !isActive(session.epoch, route.id)) return;
-                    diagnostics.mark("startup-timeout", route.id);
-                    routeFailed(session, diagnostics, routes, index, profileKey, ui, route,
+                            || !isActive(session.epoch, route.id, telemetryAttempt)) return;
+                    routeFailed(session, diagnostics, routes, index, profileKey,
+                            budgets, ui, route,
+                            telemetryAttempt,
                             PlaybackFailure.timeout("first-frame"));
                 }, delayMs, TimeUnit.MILLISECONDS);
             } catch (RejectedExecutionException ignored) {
@@ -272,7 +420,8 @@ public final class PlaybackCore implements AutoCloseable {
             try {
                 attempt.stallWatchdog = timers.scheduleWithFixedDelay(() -> {
                     if (!coordinator.isCurrent(session.epoch)
-                            || !isActive(session.epoch, attempt.route.id)) return;
+                            || !isActive(session.epoch, attempt.route.id,
+                            attempt.telemetryAttempt)) return;
                     // ExoPlayer is owned by the application/main looper. The watchdog thread
                     // only schedules a sample; it must never call Player getters directly.
                     main.post(() -> sampleStallOnMain(session, diagnostics, routes, index,
@@ -294,12 +443,13 @@ public final class PlaybackCore implements AutoCloseable {
             return;
         }
         if (!coordinator.isCurrent(session.epoch)
-                || !isActive(session.epoch, attempt.route.id)
+                || !isActive(session.epoch, attempt.route.id, attempt.telemetryAttempt)
                 || attempt.ended) return;
 
         long now = SystemClock.elapsedRealtime();
         long position = attempt.engine.positionMs();
         boolean stalled = false;
+        long stalledForMs = 0L;
         synchronized (this) {
             if (closed || !coordinator.isCurrent(session.epoch)
                     || activeAttempt != attempt) return;
@@ -312,37 +462,49 @@ public final class PlaybackCore implements AutoCloseable {
                 attempt.lastProgressAtMs = now;
             } else if (now - attempt.lastProgressAtMs >= budgets.stallMs) {
                 stalled = true;
+                stalledForMs = Math.max(0L, now - attempt.lastProgressAtMs);
             }
         }
         if (!stalled) return;
-        diagnostics.mark("stall", attempt.route.id);
-        routeFailed(session, diagnostics, routes, index, profileKey, ui,
-                attempt.route, new PlaybackFailure(PlaybackFailure.Type.STALL,
+        diagnostics.mark(PlaybackDiagnostics.Stage.STALL,
+                attempt.telemetryAttempt, stalledForMs,
+                "route:" + attempt.route.id);
+        routeFailed(session, diagnostics, routes, index, profileKey, budgets, ui,
+                attempt.route, attempt.telemetryAttempt,
+                new PlaybackFailure(PlaybackFailure.Type.STALL,
                 "PLAYBACK-STALL", "playback position stopped advancing",
                 0, true, null));
     }
 
     private void routeFailed(PlaybackSession session, PlaybackDiagnostics diagnostics,
-                             List<PlaybackRoute> routes, int index, String profileKey, Listener ui,
-                             PlaybackRoute route, PlaybackFailure failure) {
-        FailureClaim claim = claimActiveFailure(session.epoch, route.id);
+                             List<PlaybackRoute> routes, int index, String profileKey,
+                             PlaybackBudgets budgets, Listener ui,
+                             PlaybackRoute route, int telemetryAttempt,
+                             PlaybackFailure failure) {
+        FailureClaim claim = claimActiveFailure(
+                session.epoch, route.id, telemetryAttempt);
         if (claim == null) return;
         boolean afterFirstFrame = claim.afterFirstFrame;
         if (!recordFailureIfOpen(session.epoch, profileKey, route.id)) return;
-        diagnostics.mark("route-failed", route.id + ":" + failure.code);
+        diagnostics.mark(PlaybackDiagnostics.Stage.ATTEMPT_FAILURE,
+                claim.telemetryAttempt,
+                "route:" + route.id + ",code:" + failure.code
+                        + ",after_frame:" + afterFirstFrame);
         boolean recoveryWindow = !afterFirstFrame
-                || beginRecoveryWindow(session.epoch, session.request);
+                || beginRecoveryWindow(session.epoch, budgets);
         int nextIndex = PlaybackFallbackPolicy.nextUsefulRouteIndex(routes, index, failure);
         boolean canFallback = recoveryWindow && nextIndex >= 0
-                && remainingStartupMs(session) > 0L;
+                && remainingStartupMs(session, budgets) > 0L;
         boolean shouldReresolve = afterFirstFrame && recoveryWindow
                 && shouldReresolveAfterPlayback(failure)
-                && remainingStartupMs(session) > 0L;
+                && remainingStartupMs(session, budgets) > 0L;
         main.post(() -> {
             if (!stopEnginesIfCurrent(session.epoch)) return;
             if (shouldReresolve) {
                 session.state(PlaybackSession.State.RECOVERING);
-                diagnostics.mark("live-reresolve", failure.code);
+                diagnostics.mark(PlaybackDiagnostics.Stage.RECOVERY,
+                        claim.telemetryAttempt,
+                        "mode:reresolve,code:" + failure.code);
                 dispatchState(session.epoch, ui, PlaybackSession.State.RECOVERING);
                 PlaybackRequest original = session.request;
                 String profile = deviceProfileFor(session.epoch);
@@ -353,8 +515,12 @@ public final class PlaybackCore implements AutoCloseable {
                 }
             } else if (canFallback) {
                 session.state(PlaybackSession.State.RECOVERING);
+                diagnostics.mark(PlaybackDiagnostics.Stage.RECOVERY,
+                        claim.telemetryAttempt,
+                        "mode:next_route,code:" + failure.code);
                 dispatchState(session.epoch, ui, PlaybackSession.State.RECOVERING);
-                startRoute(session, diagnostics, routes, nextIndex, profileKey, ui);
+                startRoute(session, diagnostics, routes, nextIndex, profileKey,
+                        budgets, ui);
             } else {
                 finishFailure(session, diagnostics, failure, ui);
             }
@@ -365,7 +531,8 @@ public final class PlaybackCore implements AutoCloseable {
                                PlaybackFailure failure, Listener ui) {
         if (!claimFinalFailure(session.epoch)) return;
         session.state(PlaybackSession.State.FAILED);
-        diagnostics.mark("final-failure", failure.code);
+        diagnostics.mark(PlaybackDiagnostics.Stage.FINAL_FAILURE,
+                diagnostics.currentAttempt(), "code:" + failure.code);
         dispatchState(session.epoch, ui, PlaybackSession.State.FAILED);
         main.post(() -> {
             if (coordinator.isCurrent(session.epoch) && ui != null) {
@@ -380,17 +547,42 @@ public final class PlaybackCore implements AutoCloseable {
         });
     }
 
-    private synchronized boolean isActive(long epoch, String routeId) {
-        return !closed && activeAttempt != null && activeAttempt.epoch == epoch
+    private void dispatchAttemptState(long epoch, String routeId, int telemetryAttempt,
+                                      Listener ui, PlaybackSession.State state) {
+        main.post(() -> {
+            if (isActive(epoch, routeId, telemetryAttempt) && ui != null) ui.onState(state);
+        });
+    }
+
+    private synchronized boolean isActive(
+            long epoch, String routeId, int telemetryAttempt) {
+        return !closed && coordinator.isCurrent(epoch)
+                && activeAttempt != null && activeAttempt.epoch == epoch
+                && activeAttempt.telemetryAttempt == telemetryAttempt
                 && activeAttempt.route.id.equals(routeId);
     }
 
-    /** Error and timeout callbacks may race; only one is allowed to own fallback. */
-    private synchronized FailureClaim claimActiveFailure(long epoch, String routeId) {
+    /** Returns -1 for stale, 0 when first frame already won, 1 when READY owns BUFFERING. */
+    private synchronized int acceptReady(long epoch, String routeId, int telemetryAttempt,
+                                         PlaybackSession session) {
         if (closed || !coordinator.isCurrent(epoch)
                 || activeAttempt == null || activeAttempt.epoch != epoch
+                || activeAttempt.telemetryAttempt != telemetryAttempt
+                || !activeAttempt.route.id.equals(routeId)) return -1;
+        if (activeAttempt.firstFrameSeen) return 0;
+        session.state(PlaybackSession.State.BUFFERING);
+        return 1;
+    }
+
+    /** Error and timeout callbacks may race; only one is allowed to own fallback. */
+    private synchronized FailureClaim claimActiveFailure(
+            long epoch, String routeId, int telemetryAttempt) {
+        if (closed || !coordinator.isCurrent(epoch)
+                || activeAttempt == null || activeAttempt.epoch != epoch
+                || activeAttempt.telemetryAttempt != telemetryAttempt
                 || !activeAttempt.route.id.equals(routeId)) return null;
-        FailureClaim claim = new FailureClaim(activeAttempt.firstFrameSeen);
+        FailureClaim claim = new FailureClaim(
+                activeAttempt.firstFrameSeen, activeAttempt.telemetryAttempt);
         cancelAttemptLocked();
         return claim;
     }
@@ -403,8 +595,11 @@ public final class PlaybackCore implements AutoCloseable {
         return !closed && coordinator.isCurrent(epoch);
     }
 
-    private synchronized boolean claimFirstFrame(long epoch, String routeId) {
-        if (closed || activeAttempt == null || activeAttempt.epoch != epoch
+    private synchronized boolean claimFirstFrame(
+            long epoch, String routeId, int telemetryAttempt) {
+        if (closed || !coordinator.isCurrent(epoch)
+                || activeAttempt == null || activeAttempt.epoch != epoch
+                || activeAttempt.telemetryAttempt != telemetryAttempt
                 || !activeAttempt.route.id.equals(routeId)
                 || activeAttempt.firstFrameSeen) return false;
         activeAttempt.firstFrameSeen = true;
@@ -417,7 +612,7 @@ public final class PlaybackCore implements AutoCloseable {
     }
 
     /** Opens a fresh, bounded startup deadline after a real playing session fails. */
-    private synchronized boolean beginRecoveryWindow(long epoch, PlaybackRequest request) {
+    private synchronized boolean beginRecoveryWindow(long epoch, PlaybackBudgets budgets) {
         if (closed || !coordinator.isCurrent(epoch)) return false;
         long now = SystemClock.elapsedRealtime();
         if (recoveryEpoch != epoch
@@ -429,7 +624,7 @@ public final class PlaybackCore implements AutoCloseable {
         }
         if (recoveryCount >= MAX_RECOVERIES_PER_WINDOW) return false;
         recoveryCount++;
-        long budget = request != null && request.ultraHd ? 20_000L : 15_000L;
+        long budget = budgets == null ? 15_000L : budgets.totalStartupMs;
         recoveryDeadlineMs = now + budget;
         return true;
     }
@@ -446,8 +641,10 @@ public final class PlaybackCore implements AutoCloseable {
     }
 
     /** Ended VOD must not be mistaken for a stalled decoder on the next timer tick. */
-    private synchronized void markEnded(long epoch, String routeId) {
-        if (closed || activeAttempt == null || activeAttempt.epoch != epoch
+    private synchronized void markEnded(long epoch, String routeId, int telemetryAttempt) {
+        if (closed || !coordinator.isCurrent(epoch)
+                || activeAttempt == null || activeAttempt.epoch != epoch
+                || activeAttempt.telemetryAttempt != telemetryAttempt
                 || !activeAttempt.route.id.equals(routeId)) return;
         activeAttempt.ended = true;
         if (activeAttempt.stallWatchdog != null) {
@@ -462,13 +659,15 @@ public final class PlaybackCore implements AutoCloseable {
 
     /** Runs on main. Holding the core lock makes the epoch check and stop indivisible to play(). */
     private synchronized boolean stopOtherEngineIfActive(
-            long epoch, String routeId, PlaybackEngine other) {
+            long epoch, String routeId, int telemetryAttempt, PlaybackEngine other) {
         if (closed || !coordinator.isCurrent(epoch)
                 || activeAttempt == null || activeAttempt.epoch != epoch
+                || activeAttempt.telemetryAttempt != telemetryAttempt
                 || !activeAttempt.route.id.equals(routeId)) return false;
         other.stop();
         return !closed && coordinator.isCurrent(epoch)
                 && activeAttempt != null && activeAttempt.epoch == epoch
+                && activeAttempt.telemetryAttempt == telemetryAttempt
                 && activeAttempt.route.id.equals(routeId);
     }
 
@@ -488,8 +687,14 @@ public final class PlaybackCore implements AutoCloseable {
     }
 
     private synchronized List<PlaybackRoute> rankIfOpen(
-            long epoch, String profileKey, List<PlaybackRoute> routes) {
+            long epoch, String profileKey, PlaybackRequest request,
+            List<PlaybackRoute> routes) {
         if (closed || !coordinator.isCurrent(epoch)) return null;
+        if (request != null && request.remoteConfig != null
+                && (!"adaptive".equals(request.remoteConfig.effective.enginePreference)
+                || !"adaptive".equals(request.remoteConfig.effective.transportPolicy))) {
+            return routes;
+        }
         try {
             return profiles.rank(profileKey, routes);
         } catch (RejectedExecutionException ignored) {
@@ -526,16 +731,13 @@ public final class PlaybackCore implements AutoCloseable {
         activeAttempt = null;
     }
 
-    private synchronized long remainingStartupMs(PlaybackSession session) {
+    private synchronized long remainingStartupMs(PlaybackSession session,
+                                                 PlaybackBudgets budgets) {
         long now = SystemClock.elapsedRealtime();
         if (session != null && recoveryEpoch == session.epoch && recoveryDeadlineMs > 0L) {
             return recoveryDeadlineMs - now;
         }
-        long total;
-        PlaybackRequest request = session == null ? null : session.request;
-        if (request != null && request.kind == PlaybackRequest.Kind.PREVIEW) total = 8_000L;
-        else if (request != null && request.ultraHd) total = 20_000L;
-        else total = 15_000L;
+        long total = budgets == null ? 15_000L : budgets.totalStartupMs;
         long started = session == null ? now : session.createdAtMs;
         return total - Math.max(0L, now - started);
     }
@@ -578,6 +780,7 @@ public final class PlaybackCore implements AutoCloseable {
         final PlaybackRoute route;
         final PlaybackEngine engine;
         final int routeIndex;
+        final int telemetryAttempt;
         volatile long lastPositionMs;
         volatile long lastProgressAtMs;
         boolean firstFrameSeen;
@@ -586,19 +789,23 @@ public final class PlaybackCore implements AutoCloseable {
         ScheduledFuture<?> startupTimeout;
         ScheduledFuture<?> stallWatchdog;
 
-        Attempt(long epoch, PlaybackRoute route, PlaybackEngine engine, int routeIndex) {
+        Attempt(long epoch, PlaybackRoute route, PlaybackEngine engine,
+                int routeIndex, int telemetryAttempt) {
             this.epoch = epoch;
             this.route = route;
             this.engine = engine;
             this.routeIndex = routeIndex;
+            this.telemetryAttempt = telemetryAttempt;
         }
     }
 
     private static final class FailureClaim {
         final boolean afterFirstFrame;
+        final int telemetryAttempt;
 
-        FailureClaim(boolean afterFirstFrame) {
+        FailureClaim(boolean afterFirstFrame, int telemetryAttempt) {
             this.afterFirstFrame = afterFirstFrame;
+            this.telemetryAttempt = telemetryAttempt;
         }
     }
 }
