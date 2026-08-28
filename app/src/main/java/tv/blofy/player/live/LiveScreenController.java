@@ -3,6 +3,8 @@ package tv.blofy.player.live;
 import android.os.Handler;
 import android.os.Looper;
 
+import androidx.media3.common.util.UnstableApi;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -19,6 +21,7 @@ import tv.blofy.player.playback.PlaybackSession;
  * UI-agnostic Live TV state holder. It owns paging/focus/preview policy so an Activity or
  * TV Fragment only renders state and forwards D-pad/OK events.
  */
+@UnstableApi
 public final class LiveScreenController implements AutoCloseable {
     public interface Listener {
         void onItems(List<CatalogItem> items, int focusedIndex, boolean loadingMore);

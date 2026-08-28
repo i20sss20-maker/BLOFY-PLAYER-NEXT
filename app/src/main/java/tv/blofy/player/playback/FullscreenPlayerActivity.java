@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
-import android.view.KeyEvent;
 import android.view.SurfaceView;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -86,14 +85,6 @@ public final class FullscreenPlayerActivity extends Activity {
                 }
             }
         });
-    }
-
-    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            finish();
-            return true;
-        }
-        return super.onKeyDown(keyCode, event);
     }
 
     @Override protected void onDestroy() {
