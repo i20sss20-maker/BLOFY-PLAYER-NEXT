@@ -1,5 +1,7 @@
 # BLOFY PLAYER NEXT
 
+> **Official BLOFY PLAYER download:** The current Android / Android TV app is distributed through the [official BLOFY website](https://blofyplayer.com/downloads?utm_source=github_repo_next&utm_medium=referral&utm_campaign=organic_launch_202610) and [Google Play](https://play.google.com/store/apps/details?id=tv.blofy.player.v2). For international visitors, see the [English product page](https://blofyplayer.com/en?utm_source=github_repo_next&utm_medium=referral&utm_campaign=organic_launch_202610). These development repositories may contain old or experimental builds; download the approved app only from official channels. BLOFY is a player for user-provided licensed M3U / Xtream sources and does not supply channels or content subscriptions.
+
 Clean Android TV playback architecture for BLOFY PLAYER.
 
 ## Non-negotiable compatibility
