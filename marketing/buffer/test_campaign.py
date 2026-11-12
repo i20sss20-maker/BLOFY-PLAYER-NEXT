@@ -40,7 +40,15 @@ def verify():
             text, slug = publish.choose_text(service, local)
             assert len(text) < 2200 and "0568941484" in text
             assert slug in bank["imageUrls"]
-    print("PASS: 360 unique X posts, media references, platform limits and 30-day image campaign.")
+    # Refilling starts at the next future slot, never creates a post in the past.
+    now = dt.datetime(2026, 11, 12, 10, 24, tzinfo=dt.timezone.utc)
+    slots = list(publish.planned_x_slots(now))
+    assert len(slots) >= 30
+    assert all(slot > now for slot in slots)
+    assert len(slots) == len(set(slots))
+    assert slots[0].astimezone(ZoneInfo("Asia/Riyadh")).hour == 15
+    assert publish.FREE_QUEUE_GUARD == 8, "Leave room for two manual posts in Buffer Free."
+    print("PASS: 360 unique X posts, next-slot refill, native media and 30-day image campaign.")
 
 
 if __name__ == "__main__":
