@@ -21,6 +21,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
+      - name: Freeze original marketing images as repository JPEGs
+        run: python3 marketing/buffer/build_assets.py
       - name: Render original branded promo
         run: |
           ffmpeg -version | head -n 1
@@ -29,7 +31,7 @@ jobs:
         run: |
           git config user.name "blofy-marketing-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add marketing/videos/*.mp4
+          git add marketing/videos/*.mp4 marketing/images/tiktok/*.jpg marketing/images/instagram/*.jpg
           if git diff --cached --quiet; then
             echo "Video unchanged."
             exit 0
