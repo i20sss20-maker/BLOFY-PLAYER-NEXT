@@ -64,7 +64,7 @@ def channels_by_service():
     for org in orgs:
         d = gql(
             "query { channels(input: {organizationId: " + qstring(org["id"])
-            + "}) { id name displayName service isQueuePaused } }"
+            + "}) { id name displayName service isQueuePaused hasActiveMemberDevice } }"
         )
         for ch in d.get("channels") or []:
             channels.append(dict(ch, organizationId=org["id"]))
@@ -94,6 +94,8 @@ def get_channel(channels, service):
     if len(matches) != 1:
         print(f"SKIP {service}: expected one matching connected profile; found {len(matches)}.")
         return None
+    if service == "instagram" and matches[0].get("hasActiveMemberDevice") is False:
+        print("NOTICE instagram: no Buffer mobile device registered for notification publishing.")
     if matches[0].get("isQueuePaused"):
         print(f"SKIP {service}: queue paused in Buffer.")
         return None
@@ -106,7 +108,7 @@ def recent_posts(ch):
         + qstring(ch["organizationId"])
         + ", filter: {status: [scheduled, sending, sent, error], channelIds: ["
         + qstring(ch["id"])
-        + "]}}) { edges { node { id text dueAt status sentAt externalLink schedulingType notificationStatus } } "
+        + "]}}) { edges { node { id text dueAt status sentAt externalLink schedulingType notificationStatus error { message } } } "
         + "pageInfo { hasNextPage endCursor } } }"
     )
     edges = ((d.get("posts") or {}).get("edges") or [])
@@ -244,7 +246,8 @@ def main():
                             f"due={post.get('dueAt')}, sentAt={post.get('sentAt')}, "
                             f"delivery={post.get('schedulingType')}, "
                             f"notification={post.get('notificationStatus')}, "
-                            f"url={post.get('externalLink') or 'unavailable'}"
+                            f"url={post.get('externalLink') or 'unavailable'}, "
+                            f"error={(post.get('error') or {}).get('message') or 'none'}"
                         )
         print("CHECK OK: no posts created.")
         return
