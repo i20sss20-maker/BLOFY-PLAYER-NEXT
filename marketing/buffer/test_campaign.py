@@ -52,7 +52,17 @@ def verify():
     assert morning_slot.astimezone(ZoneInfo("Asia/Riyadh")).hour == 9
     assert morning_slot + dt.timedelta(minutes=30) > morning
     assert publish.FREE_QUEUE_GUARD == 8, "Leave room for two manual posts in Buffer Free."
-    print("PASS: 360 unique X posts, next-slot refill, native media and 30-day image campaign.")
+    # TikTok must alternate between image and original video from Nov 30 onward.
+    start = dt.datetime(2026, 11, 30, 15, tzinfo=dt.timezone.utc)
+    expected = ["video", "image", "image", "video", "image", "image", "video"]
+    for i, kind in enumerate(expected):
+        t, media, media_type = publish.media_for_post("tiktok", start + dt.timedelta(days=i))
+        assert media_type == kind, (i, media_type, kind)
+        assert media.endswith(".mp4" if kind == "video" else ".jpg")
+        assert "0568941484" in t and "#BLOFY" in t
+    for v in bank["videoUrls"]:
+        assert "/marketing/videos/" in v["url"] and v["url"].endswith(".mp4")
+    print("PASS: 360 unique X posts, queue refill, native JPEG and TikTok MP4 video rotation.")
 
 
 if __name__ == "__main__":
