@@ -124,7 +124,8 @@ def choose_text(service, slot):
         headline, detail, slug = BANK["topics"][index % len(BANK["topics"])]
         emoji = BANK["openers"][(index // len(BANK["topics"])) % len(BANK["openers"])]
         call = BANK["calls"][(index // (len(BANK["topics"]) * len(BANK["openers"]))) % len(BANK["calls"])]
-        text = f"{emoji} {headline}\n\n{detail}\n\n{call}\n\n#BLOFY #IPTV"
+        tags = BANK["hashtagPairs"][(index // 8) % len(BANK["hashtagPairs"])]
+        text = f"{emoji} {headline}\n\n{detail}\n\n{call}\n\n{tags}"
         return text, slug
     options = BANK["insta"] if service == "instagram" else BANK["tiktok"]
     line, slug = options[day % len(options)]
@@ -234,6 +235,7 @@ def main():
     channels = channels_by_service()
     print("Channels found: " + ", ".join(
         str(ch.get("service")) + "/" + str(ch.get("displayName") or ch.get("name"))
+        + "[type=" + str(ch.get("type", "unknown")) + ",device=" + str(ch.get("hasActiveMemberDevice", "unknown")) + "]"
         for ch in channels
     ))
     if args.mode == "check":
