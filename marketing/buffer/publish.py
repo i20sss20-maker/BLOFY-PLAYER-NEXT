@@ -232,8 +232,48 @@ def planned_x_slots(now):
                 yield slot
 
 
+def x_publishing_enabled():
+    """Emergency safety interlock: X stays off until owner reviews account warning."""
+    return os.environ.get("BLOFY_X_AUTOPOST_ENABLED", "false").strip().lower() == "true"
+
+
+def emergency_clear_x_queue(ch):
+    """Remove only scheduled posts from the user's matching @i20au Buffer queue."""
+    posts = recent_posts(ch)
+    queued = [p for p in posts if p.get("status") == "scheduled"]
+    print(f"EMERGENCY: found {len(queued)} scheduled X posts; clearing queue.")
+    errors = []
+    for post in queued:
+        id = post.get("id")
+        if not id:
+            errors.append("missing id")
+            continue
+        query = (
+            "mutation { deletePost(input: {id: " + qstring(id) + "}) { "
+            "... on DeletePostSuccess { id } "
+            "... on VoidMutationError { message } "
+            "} }"
+        )
+        result = gql(query).get("deletePost") or {}
+        if result.get("id") == id:
+            print(f"DELETED QUEUED X POST: {id}")
+        else:
+            errors.append(id + ": " + str(result.get("message", "unknown error")))
+            print(f"FAILED TO DELETE QUEUED X POST: {id}")
+    remaining = [p for p in recent_posts(ch) if p.get("status") == "scheduled"]
+    print(f"EMERGENCY VERIFY: {len(remaining)} future scheduled X posts remain.")
+    if errors or remaining:
+        raise RuntimeError("Could not clear X queue fully; remaining posts: "
+                           + ",".join(str(p.get("id")) for p in remaining)
+                           + "; failed removals: " + ";".join(errors))
+    print("X QUEUE CLEAN. Published tweets were not touched.")
+
+
 def refill_x(ch, now):
-    """Keep up to 8 X posts queued without exhausting Buffer's 10-slot free tier."""
+    """Keep up to 8 X posts queued if the account has been explicitly re-enabled."""
+    if not x_publishing_enabled():
+        print("SAFETY: X auto-publishing DISABLED due to X account spam lock.")
+        return
     posts = recent_posts(ch)
     queued = sum(
         str(p.get("status", "")).lower() in ("scheduled", "sending")
@@ -253,6 +293,9 @@ def refill_x(ch, now):
 
 
 def buffer_post(ch, service, slot, dry_run=False, immediate=False, cached_posts=None):
+    if service == "twitter" and not x_publishing_enabled():
+        print("SAFETY: declined X post while account is locked.")
+        return False
     if (
         service == "instagram"
         and str(ch.get("type", "")).lower() == "profile"
@@ -355,7 +398,7 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False, cached_posts=
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("scheduled", "refill", "check", "upgrade-x-whatsapp", "post-x-now", "post-instagram-now", "post-tiktok-video-test"), default="check")
+    parser.add_argument("--mode", choices=("scheduled", "refill", "check", "emergency-stop-x", "upgrade-x-whatsapp", "post-x-now", "post-instagram-now", "post-tiktok-video-test"), default="check")
     args = parser.parse_args()
     now = dt.datetime.now(UTC)
     channels = channels_by_service()
@@ -425,6 +468,13 @@ def main():
             with open(report, "a", encoding="utf-8") as output:
                 output.write("\n".join(summary) + "\n")
         print("CHECK OK: no posts created.")
+        return
+
+    if args.mode == "emergency-stop-x":
+        ch = get_channel(channels, "twitter")
+        if not ch:
+            raise SystemExit("X channel is missing; cannot confirm queue cancellation.")
+        emergency_clear_x_queue(ch)
         return
 
     if args.mode == "upgrade-x-whatsapp":
