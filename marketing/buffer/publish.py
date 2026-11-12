@@ -308,6 +308,16 @@ def main():
         for ch in channels
     ))
     if args.mode == "check":
+        summary = [
+            "# BLOFY | حالة النشر على Buffer",
+            "",
+            "وقت الفحص: " + now.astimezone(RIYADH).strftime("%Y-%m-%d %H:%M")
+            + " بتوقيت السعودية",
+            "",
+            "| المنصة | مجدول | منشور | أخطاء |",
+            "|---|---:|---:|---:|",
+        ]
+        notes = []
         for service in ("twitter", "instagram", "tiktok"):
             ch = get_channel(channels, service)
             if ch:
@@ -317,8 +327,19 @@ def main():
                     state = str(post.get("status", "unknown")).lower()
                     statuses[state] = statuses.get(state, 0) + 1
                 print(f"{service}: accessible; posts by status: {json.dumps(statuses)}")
+                summary.append(
+                    f"| {service} | {statuses.get('scheduled', 0)} | "
+                    f"{statuses.get('sent', 0)} | {statuses.get('error', 0)} |"
+                )
+                if service == "instagram" and ch.get("hasActiveMemberDevice") is False:
+                    notes.append("**Instagram:** الحساب شخصي دون هاتف Buffer مرتبط؛ النشر التلقائي غير مفعل.")
                 for post in posts:
                     state = str(post.get("status", "")).lower()
+                    if state == "error":
+                        message = (post.get("error") or {}).get("message") or "unknown error"
+                        notes.append(f"**{service} خطأ:** {message[:240]}")
+                    if state == "sent" and post.get("externalLink"):
+                        notes.append(f"**{service} منشور:** {post['externalLink']}")
                     if state in ("sent", "error", "sending", "scheduled"):
                         print(
                             f"POST {service}: id={post.get('id')}, status={state}, "
@@ -328,6 +349,14 @@ def main():
                             f"url={post.get('externalLink') or 'unavailable'}, "
                             f"error={(post.get('error') or {}).get('message') or 'none'}"
                         )
+        summary += ["", "## آخر النتائج", ""]
+        summary += notes[:15] or ["لا توجد ملاحظات مهمة في هذا الفحص."]
+        summary.append("")
+        summary.append("_ملاحظة: إعلانات TikTok المجدولة في Metricool لا تظهر ضمن هذا التقرير._")
+        report = os.environ.get("GITHUB_STEP_SUMMARY")
+        if report:
+            with open(report, "a", encoding="utf-8") as output:
+                output.write("\\n".join(summary) + "\\n")
         print("CHECK OK: no posts created.")
         return
 
