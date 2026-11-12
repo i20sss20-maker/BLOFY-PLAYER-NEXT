@@ -198,7 +198,7 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("scheduled", "check", "post-x-now"), default="check")
+    parser.add_argument("--mode", choices=("scheduled", "check", "post-x-now", "post-instagram-now"), default="check")
     args = parser.parse_args()
     now = dt.datetime.now(UTC)
     channels = channels_by_service()
@@ -216,7 +216,10 @@ def main():
         return
 
     jobs = []
-    if args.mode == "post-x-now":
+    if args.mode == "post-instagram-now":
+        slot = now.replace(minute=0, second=0, microsecond=0)
+        jobs.append(("instagram", slot))
+    elif args.mode == "post-x-now":
         local = now.astimezone(RIYADH)
         # Use the nearest regular daily text-slot for this manual publish.
         hour = min((9, 11, 13, 15, 17, 19, 21, 23), key=lambda h: abs(h-local.hour))
@@ -241,7 +244,7 @@ def main():
         if not ch:
             continue
         try:
-            buffer_post(ch, service, slot, immediate=(args.mode == "post-x-now"))
+            buffer_post(ch, service, slot, immediate=(args.mode in ("post-x-now", "post-instagram-now")))
         except Exception as ex:
             # A failed channel should not block other channels. Surface all errors.
             print(f"ERROR {service}: {ex}", file=sys.stderr)
