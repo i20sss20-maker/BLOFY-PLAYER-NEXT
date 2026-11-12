@@ -154,7 +154,7 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
         return
 
     if service != "twitter":
-        image_url = BANK["imageUrls"][slug]
+        image_url = (BANK["instagramImageUrls"] if service == "instagram" else BANK["imageUrls"])[slug]
         if not dry_run:
             check_media(image_url)
         asset = ", assets: [{image: {url: " + qstring(image_url) + "}}]"
