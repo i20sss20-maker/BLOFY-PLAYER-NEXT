@@ -189,13 +189,13 @@ def refill_x(ch, now):
     for slot in planned_x_slots(now):
         if queued >= FREE_QUEUE_GUARD:
             break
-        if buffer_post(ch, "twitter", slot):
+        if buffer_post(ch, "twitter", slot, cached_posts=posts):
             created += 1
             queued += 1
     print(f"REFILL twitter: created {created} posts; {queued} posts queued.")
 
 
-def buffer_post(ch, service, slot, dry_run=False, immediate=False):
+def buffer_post(ch, service, slot, dry_run=False, immediate=False, cached_posts=None):
     if (
         service == "instagram"
         and str(ch.get("type", "")).lower() == "profile"
@@ -207,7 +207,7 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     text, media_url, media_type = media_for_post(service, slot)
     if len(text) > 280 and service == "twitter":
         raise RuntimeError("Generated X post is longer than 280 characters.")
-    posts = recent_posts(ch)
+    posts = recent_posts(ch) if cached_posts is None else cached_posts
     if service in ("instagram", "tiktok"):
         # Only one visual campaign post per Saudi-local date, including test posts.
         local_date = (slot + dt.timedelta(minutes=30)).astimezone(RIYADH).date()
@@ -289,6 +289,10 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     if not post or not post.get("id"):
         raise RuntimeError("Buffer refused post: " + str(result.get("message", result)))
     print(f"CREATED {service}: {post['id']} scheduled for {post.get('dueAt')}")
+    # Cache the confirmed API response to avoid re-fetching posts per queue item.
+    # This reduces Buffer Free API use, while the next separate run re-reads live state.
+    posts.append({"id": post["id"], "dueAt": post.get("dueAt") or due_at,
+                  "text": text, "status": "scheduled", "schedulingType": "automatic"})
     return True
 
 
