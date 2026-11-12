@@ -38,7 +38,7 @@ jobs:
             echo "::error::Set BUFFER_API_KEY in Settings > Secrets and variables > Actions before publishing."
             exit 1
           fi
-      - name: Read channels or create scheduled posts
+      - name: Read Buffer channels or create scheduled posts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           RUN_MODE: ${{ github.event_name == 'push' && 'post-instagram-now' || (github.event.inputs.mode || 'scheduled') }}
