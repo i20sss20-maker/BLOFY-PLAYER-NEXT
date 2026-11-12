@@ -9,21 +9,25 @@ import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent
 BANK = json.loads((ROOT / "content.json").read_text(encoding="utf-8"))
-SELECTION = ["04-retail-partners", "02-server-solutions", "03-player-app"]
-OUTPUT = ROOT.parent / "videos" / "blofy-vertical-distribution-01.mp4"
+CAMPAIGNS = [
+    ("blofy-vertical-distribution-01.mp4", ["04-retail-partners", "02-server-solutions", "03-player-app"]),
+    ("blofy-vertical-distributor-02.mp4", ["06-distributor", "04-retail-partners", "08-how-to-order"]),
+    ("blofy-vertical-player-03.mp4", ["03-player-app", "01-iptv-codes", "07-contact"]),
+    ("blofy-vertical-servers-04.mp4", ["02-server-solutions", "06-distributor", "07-contact"]),
+]
 
 
 def execute(cmd):
     subprocess.run(cmd, check=True, timeout=360)
 
 
-def main():
+def build_campaign(output, selection):
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         raise SystemExit("ffmpeg and ffprobe must be installed.")
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         images = []
-        for n, slug in enumerate(SELECTION):
+        for n, slug in enumerate(selection):
             image = pathlib.Path(tmp) / f"scene_{n+1}.jpg"
             request = urllib.request.Request(
                 BANK["imageUrls"][slug],
@@ -55,18 +59,23 @@ def main():
             "-r", "24", "-c:v", "libx264", "-preset", "veryfast",
             "-crf", "24", "-pix_fmt", "yuv420p",
             "-movflags", "+faststart", "-t", "11.6",
-            str(OUTPUT),
+            str(output),
         ]
         execute(cmd)
         duration = float(subprocess.check_output([
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
-            "-of", "default=nw=1:nk=1", str(OUTPUT)
+            "-of", "default=nw=1:nk=1", str(output)
         ], text=True).strip())
         if not (10.0 <= duration <= 13.0):
             raise RuntimeError(f"Invalid video duration: {duration}")
-        print(f"Created {OUTPUT} duration={duration:.1f}s size={OUTPUT.stat().st_size} bytes")
-        if OUTPUT.stat().st_size > 18_000_000:
+        print(f"Created {output} duration={duration:.1f}s size={output.stat().st_size} bytes")
+        if output.stat().st_size > 18_000_000:
             raise RuntimeError("Video file unexpectedly large; not uploading.")
+
+
+def main():
+    for filename, scenes in CAMPAIGNS:
+        build_campaign(ROOT.parent / "videos" / filename, scenes)
 
 
 if __name__ == "__main__":
