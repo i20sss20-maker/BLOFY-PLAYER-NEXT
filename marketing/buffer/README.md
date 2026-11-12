@@ -37,3 +37,13 @@ For Buffer documentation: https://developers.buffer.com/guides/getting-started.h
 ## Automated status checks
 
 GitHub Actions checks Buffer post statuses at **08:20 Riyadh time every day** and prints X public post URLs, queued items and any errors in the workflow logs. On workflow pushes it runs read-only checks; only scheduled or explicitly dispatched posting modes can create posts. Metricool publishing errors require a separate Metricool calendar inspection.
+
+
+## Progress confirmed on 2026-11-12
+
+- **X @i20au:** First original BLOFY post confirmed sent at 12:50 Riyadh, public URL above. Automated recurring publishing remains configured for 8 daytime slots.
+- **TikTok @i.20as / Metricool:** First PNG attempt at 12:14 failed (unsupported PNG). Corrected **JPEG** repost at 13:15 returned **PUBLISHED**. All other 15 future Metricool ads are scheduled as JPEG or MP4 (4 promo videos).
+- **Instagram @i10s01 / Buffer:** No mobile device registered. The attempted notification post failed; auto-publisher intentionally skips personal Instagram until a device is registered or account converted to professional.
+- **TikTok @i.20as / Buffer:** Scheduled future JPEG test for 2026-11-28 18:30 Riyadh, automatically after Metricool campaign; no duplicate TikTok campaign before then.
+- **BLOFY marketing artwork:** 8 native 1080x1920 JPG images and 8 matching 1080x1350 feed JPGs are now hosted in GitHub under `marketing/images/`. Four original 11.6-second MP4 promos are hosted under `marketing/videos/`.
+- **Quality:** Offline test covers 360 unique X posts over 45 days and both image platforms. Changes to the publisher workflow trigger only a read-only live Buffer connection check, not a surprise new public post.
