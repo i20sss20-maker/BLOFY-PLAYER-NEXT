@@ -180,11 +180,12 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     if dry_run:
         print("DRY RUN: no post created.")
         return
+    metadata = ", metadata: { instagram: { type: post, shouldShareToFeed: true } }" if service == "instagram" else ""
     mutation = (
         "mutation { createPost(input: {text: " + qstring(text)
         + ", channelId: " + qstring(ch["id"])
         + ", schedulingType: automatic, mode: customScheduled, dueAt: " + qstring(due_at)
-        + asset
+        + asset + metadata
         + "}) { ... on PostActionSuccess { post { id dueAt text } } "
         + "... on MutationError { message } } }"
     )
