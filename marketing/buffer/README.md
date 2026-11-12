@@ -47,3 +47,12 @@ GitHub Actions checks Buffer post statuses at **08:20 Riyadh time every day** an
 - **TikTok @i.20as / Buffer:** Scheduled future JPEG test for 2026-11-28 18:30 Riyadh, automatically after Metricool campaign; no duplicate TikTok campaign before then.
 - **BLOFY marketing artwork:** 8 native 1080x1920 JPG images and 8 matching 1080x1350 feed JPGs are now hosted in GitHub under `marketing/images/`. Four original 11.6-second MP4 promos are hosted under `marketing/videos/`.
 - **Quality:** Offline test covers 360 unique X posts over 45 days and both image platforms. Changes to the publisher workflow trigger only a read-only live Buffer connection check, not a surprise new public post.
+
+## 2026-11-12 queue hardening
+
+- Buffer's Free plan officially allows **10 queued posts per channel** (not 10 posts per month). The autopublisher now keeps **8 future X posts** queued, leaving **2 manual slots** free.
+- The recurring GitHub Actions job refreshes the queue using future Saudi-local 09:30, 11:30, 13:30, 15:30, 17:30, 19:30, 21:30 and 23:30 slots. This is more reliable than relying on exact GitHub cron start times.
+- **Verified queue at 13:30 Riyadh 2026-11-12:** eight pending X posts were accepted by Buffer: 15:30–23:30 on Nov 12 and 09:30–13:30 on Nov 13. The existing first X post remains confirmed **sent**.
+- TikTok/Instagram scheduling now skips a day if that channel already has a scheduled or sent post for the same Saudi-local calendar date; this prevents an extra TikTok Buffer post on November 28, for which an advance test was already queued.
+- Workflow changes trigger a read-only `check`; scheduled runs and intentional manual `refill` mode create new posts.
+- Follow X automation rules: avoid excessive frequency and near-duplicate promotional content. Reduce campaign volume if reach falls or X warns about spam.
