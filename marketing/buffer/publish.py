@@ -123,14 +123,71 @@ def choose_text(service, slot):
         index = day * len(X_SLOT_UTC) + pos
         headline, detail, slug = BANK["topics"][index % len(BANK["topics"])]
         emoji = BANK["openers"][(index // len(BANK["topics"])) % len(BANK["openers"])]
-        call = BANK["calls"][(index // (len(BANK["topics"]) * len(BANK["openers"]))) % len(BANK["calls"])]
+        calls = BANK["xCtas"][slug]
+        call = calls[(index // len(BANK["topics"])) % len(calls)]
         tags = BANK["hashtagPairs"][(index // 8) % len(BANK["hashtagPairs"])]
-        text = f"{emoji} {headline}\n\n{detail}\n\n{call}\n\n{tags}"
+        text = (f"{emoji} {headline}\n\n{detail}\n\n{call}\n"
+                f"📲 واتساب مباشر: {BANK['whatsappUrl']}\n{tags}")
         return text, slug
     options = BANK["insta"] if service == "instagram" else BANK["tiktok"]
     line, slug = options[day % len(options)]
     text = f"{line}\n\nللتفاصيل: {BANK['contact']}\n\n#BLOFY #IPTV #لوحات_توزيع"
     return text, slug
+
+
+def legacy_x_text(slot):
+    """Exact older template used by our own previous X autopublisher only."""
+    local = slot.astimezone(RIYADH)
+    index = local.date().toordinal() * len(X_SLOT_UTC) + (local.hour - 9) // 2
+    headline, detail, _ = BANK["topics"][index % len(BANK["topics"])]
+    emoji = BANK["openers"][(index // len(BANK["topics"])) % len(BANK["openers"])]
+    call = BANK["calls"][
+        (index // (len(BANK["topics"]) * len(BANK["openers"]))) % len(BANK["calls"])
+    ]
+    tags = BANK["hashtagPairs"][(index // 8) % len(BANK["hashtagPairs"])]
+    return f"{emoji} {headline}\n\n{detail}\n\n{call}\n\n{tags}"
+
+
+def upgrade_existing_x_posts(ch):
+    """Edit only our old scheduled text posts; preserve date, media and all other settings."""
+    posts = recent_posts(ch)
+    edits = 0
+    skipped = 0
+    for p in sorted(posts, key=lambda p: p.get("dueAt") or ""):
+        if p.get("status") != "scheduled" or not p.get("dueAt") or not p.get("id"):
+            continue
+        if BANK["whatsappUrl"] in p.get("text", ""):
+            continue
+        due = dt.datetime.fromisoformat(p["dueAt"].replace("Z", "+00:00"))
+        if due <= dt.datetime.now(UTC) + dt.timedelta(minutes=3):
+            skipped += 1
+            continue
+        slot = due - dt.timedelta(minutes=30)
+        if slot.astimezone(RIYADH).hour not in range(9, 24, 2):
+            skipped += 1
+            continue
+        if p.get("text", "").strip() != legacy_x_text(slot).strip():
+            print(f"SKIP X edit {p['id']}: text is not our original campaign template.")
+            skipped += 1
+            continue
+        replacement, _ = choose_text("twitter", slot)
+        if len(replacement) > 280 or BANK["whatsappUrl"] not in replacement:
+            raise RuntimeError("Unsafe replacement X post length/link.")
+        q = (
+            "mutation { editPost(input: {id: " + qstring(p["id"])
+            + ", text: " + qstring(replacement)
+            + "}) { ... on PostActionSuccess { post { id text dueAt status } } "
+            + "... on MutationError { message } } }"
+        )
+        result = gql(q).get("editPost") or {}
+        actual = result.get("post")
+        if not actual or actual.get("text") != replacement or actual.get("dueAt") != p["dueAt"]:
+            raise RuntimeError("Buffer X edit failed or changed scheduling: "
+                               + str(result.get("message", result)))
+        edits += 1
+        print(f"EDITED X: {p['id']} keeps dueAt={p['dueAt']}, WhatsApp link added.")
+    print(f"X MIGRATION: {edits} posts updated; {skipped} skipped safely.")
+    return edits
 
 
 def media_for_post(service, slot):
@@ -298,7 +355,7 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False, cached_posts=
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("scheduled", "refill", "check", "post-x-now", "post-instagram-now", "post-tiktok-video-test"), default="check")
+    parser.add_argument("--mode", choices=("scheduled", "refill", "check", "upgrade-x-whatsapp", "post-x-now", "post-instagram-now", "post-tiktok-video-test"), default="check")
     args = parser.parse_args()
     now = dt.datetime.now(UTC)
     channels = channels_by_service()
@@ -358,6 +415,13 @@ def main():
             with open(report, "a", encoding="utf-8") as output:
                 output.write("\n".join(summary) + "\n")
         print("CHECK OK: no posts created.")
+        return
+
+    if args.mode == "upgrade-x-whatsapp":
+        ch = get_channel(channels, "twitter")
+        if not ch:
+            raise SystemExit("BLOFY X channel not connected.")
+        upgrade_existing_x_posts(ch)
         return
 
     jobs = []
