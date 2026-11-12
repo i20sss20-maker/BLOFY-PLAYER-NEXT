@@ -33,6 +33,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Validate 45-day campaign plan
+        run: python3 marketing/buffer/test_campaign.py
       - name: Check Buffer key configured
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
