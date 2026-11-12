@@ -5,7 +5,7 @@ on:
       - '.github/workflows/blofy-buffer-auto-post.yml'
   schedule:
     # Saudi Arabia (UTC+03): X 09:00-23:00 every 2h; Instagram 18:30.
-    # GitHub schedule may start late; media uses self-hosted BLOFY GitHub JPG files.
+    # GitHub schedule may start late; X queue is refilled with unique scheduled posts.
     - cron: '0 6,8,10,12,14,16,18,20 * * *'
     # Daily read-only audit of actual Buffer publication statuses and errors, 08:20 Saudi time.
     - cron: '20 5 * * *'
