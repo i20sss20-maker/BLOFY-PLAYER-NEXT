@@ -7,6 +7,8 @@ on:
     # Saudi Arabia (UTC+03): X 09:00-23:00 every 2h; Instagram 18:30.
     # GitHub schedule may start late during heavy load; image posts use Buffer media URLs.
     - cron: '0 6,8,10,12,14,16,18,20 * * *'
+    # Daily read-only audit of Buffer publication statuses, 08:20 Saudi time.
+    - cron: '20 5 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -41,5 +43,5 @@ jobs:
       - name: Read Buffer channels or create scheduled posts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
-          RUN_MODE: ${{ github.event_name == 'push' && 'check' || (github.event.inputs.mode || 'scheduled') }}
+          RUN_MODE: ${{ (github.event_name == 'push' || github.event.schedule == '20 5 * * *') && 'check' || (github.event.inputs.mode || 'scheduled') }}
         run: python3 marketing/buffer/publish.py --mode "$RUN_MODE"
