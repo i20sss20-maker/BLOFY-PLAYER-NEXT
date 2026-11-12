@@ -140,7 +140,7 @@ def check_media(url):
         res.read(256)
 
 
-def buffer_post(ch, service, slot, dry_run=False):
+def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     text, slug = choose_text(service, slot)
     if len(text) > 280 and service == "twitter":
         raise RuntimeError("Generated X post is longer than 280 characters.")
@@ -162,12 +162,12 @@ def buffer_post(ch, service, slot, dry_run=False):
         asset = ""
 
     now = dt.datetime.now(UTC)
-    when = max(slot + dt.timedelta(minutes=30), now + dt.timedelta(minutes=6))
+    when = (now + dt.timedelta(minutes=6)) if immediate else max(slot + dt.timedelta(minutes=30), now + dt.timedelta(minutes=6))
     # If scheduled workflow was badly delayed, don't post an extra outdated ad.
-    if service != "twitter" and when > slot + dt.timedelta(hours=2):
+    if not immediate and service != "twitter" and when > slot + dt.timedelta(hours=2):
         print(f"SKIP {service}: scheduled job ran too late.")
         return
-    if service == "twitter" and when > slot + dt.timedelta(hours=1, minutes=50):
+    if not immediate and service == "twitter" and when > slot + dt.timedelta(hours=1, minutes=50):
         print(f"SKIP {service}: scheduled job ran too late.")
         return
     due_at = when.strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -241,7 +241,7 @@ def main():
         if not ch:
             continue
         try:
-            buffer_post(ch, service, slot)
+            buffer_post(ch, service, slot, immediate=(args.mode == "post-x-now"))
         except Exception as ex:
             # A failed channel should not block other channels. Surface all errors.
             print(f"ERROR {service}: {ex}", file=sys.stderr)
