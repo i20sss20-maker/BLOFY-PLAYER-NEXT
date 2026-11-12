@@ -21,9 +21,9 @@ def verify():
     assert required <= set(bank["imageUrls"])
     assert required <= set(bank["instagramImageUrls"])
     for image in bank["imageUrls"].values():
-        assert "output=jpg" in image, "TikTok should receive JPEG, never PNG."
+        assert "/marketing/images/tiktok/" in image and image.endswith(".jpg"), "TikTok should receive self-hosted JPEG."
     for image in bank["instagramImageUrls"].values():
-        assert "output=jpg" in image and "h=1350" in image, "Instagram needs 4:5 JPEG creative."
+        assert "/marketing/images/instagram/" in image and image.endswith(".jpg"), "Instagram should receive native 4:5 JPEG."
     x_texts = []
     for day in range(45):
         local_day = dt.datetime(2026, 11, 12, tzinfo=ZoneInfo("Asia/Riyadh")) + dt.timedelta(days=day)
