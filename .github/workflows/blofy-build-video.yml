@@ -1,0 +1,35 @@
+name: BLOFY - Build Vertical Promo Video
+on:
+  push:
+    paths:
+      - '.github/workflows/blofy-build-video.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: blofy-promo-build
+  cancel-in-progress: false
+jobs:
+  create-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Render original branded promo
+        run: |
+          ffmpeg -version | head -n 1
+          python3 marketing/buffer/build_video.py
+      - name: Commit verified video to public marketing assets
+        run: |
+          git config user.name "blofy-marketing-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add marketing/videos/blofy-vertical-distribution-01.mp4
+          if git diff --cached --quiet; then
+            echo "Video unchanged."
+            exit 0
+          fi
+          git commit -m "Publish original BLOFY vertical promo video"
+          git pull --rebase origin main
+          git push origin HEAD:main
