@@ -146,6 +146,19 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
         raise RuntimeError("Generated X post is longer than 280 characters.")
     posts = recent_posts(ch)
     scheduled = [p for p in posts if str(p.get("status")).lower() == "scheduled"]
+    if service == "instagram":
+        # Personal Instagram is notification-only. Do not silently build up
+        # a backlog of manual posts if the owner has not published the last one.
+        now_utc = dt.datetime.now(UTC)
+        uncompleted = [
+            p for p in scheduled
+            if p.get("schedulingType") == "notification"
+            and p.get("dueAt")
+            and dt.datetime.fromisoformat(p["dueAt"].replace("Z", "+00:00")) <= now_utc
+        ]
+        if uncompleted:
+            print(f"SKIP instagram: {len(uncompleted)} past-due mobile notification post(s) need manual publishing.")
+            return
     if len(scheduled) >= FREE_QUEUE_GUARD:
         print(f"SKIP {service}: {len(scheduled)} scheduled posts; free queue nearly full.")
         return
