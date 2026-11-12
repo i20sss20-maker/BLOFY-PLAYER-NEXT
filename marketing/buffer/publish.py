@@ -218,7 +218,7 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("scheduled", "check", "post-x-now", "post-instagram-now"), default="check")
+    parser.add_argument("--mode", choices=("scheduled", "check", "post-x-now", "post-instagram-now", "post-tiktok-test"), default="check")
     args = parser.parse_args()
     now = dt.datetime.now(UTC)
     channels = channels_by_service()
@@ -250,7 +250,11 @@ def main():
         return
 
     jobs = []
-    if args.mode == "post-instagram-now":
+    if args.mode == "post-tiktok-test":
+        # One future test date after the current Metricool TikTok campaign ends.
+        slot = dt.datetime(2026, 11, 28, 15, 0, tzinfo=UTC)
+        jobs.append(("tiktok", slot))
+    elif args.mode == "post-instagram-now":
         slot = now.replace(minute=0, second=0, microsecond=0)
         jobs.append(("instagram", slot))
     elif args.mode == "post-x-now":
