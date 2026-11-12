@@ -64,7 +64,7 @@ def channels_by_service():
     for org in orgs:
         d = gql(
             "query { channels(input: {organizationId: " + qstring(org["id"])
-            + "}) { id name displayName service isQueuePaused hasActiveMemberDevice } }"
+            + "}) { id name displayName service type isQueuePaused hasActiveMemberDevice } }"
         )
         for ch in d.get("channels") or []:
             channels.append(dict(ch, organizationId=org["id"]))
@@ -143,6 +143,14 @@ def check_media(url):
 
 
 def buffer_post(ch, service, slot, dry_run=False, immediate=False):
+    if (
+        service == "instagram"
+        and str(ch.get("type", "")).lower() == "profile"
+        and not ch.get("hasActiveMemberDevice", False)
+    ):
+        print("SKIP instagram: personal account has no Buffer mobile app/device for required notification publishing.")
+        print("Fix: connect the Buffer mobile app with notifications, or upgrade Instagram to Professional and reconnect.")
+        return
     text, slug = choose_text(service, slot)
     if len(text) > 280 and service == "twitter":
         raise RuntimeError("Generated X post is longer than 280 characters.")
