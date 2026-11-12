@@ -468,5 +468,36 @@
     "#BLOFY #BLOFYPLAYER",
     "#BLOFY #متاجر",
     "#BLOFY #لوحات_توزيع"
-  ]
+  ],
+  "videoUrls": [
+    {
+      "slug": "distribution",
+      "filename": "blofy-vertical-distribution-01.mp4",
+      "text": "🏪 لأصحاب المتاجر: تعرف على لوحات توزيع BLOFY وخدمات إصدار أكواد IPTV. للاستفسار: 0568941484 #BLOFY #IPTV",
+      "url": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/videos/blofy-vertical-distribution-01.mp4"
+    },
+    {
+      "slug": "distributor",
+      "filename": "blofy-vertical-distributor-02.mp4",
+      "text": "🚀 عندك متجر أو تفكر تبدأ التوزيع؟ اكتشف خدمات BLOFY لإدارة الأكواد والاشتراكات. 📱 0568941484 #BLOFY #موزعين",
+      "url": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/videos/blofy-vertical-distributor-02.mp4"
+    },
+    {
+      "slug": "player",
+      "filename": "blofy-vertical-player-03.mp4",
+      "text": "📺 تعرّف على BLOFY PLAYER لتنظيم وتشغيل الاشتراكات المدعومة. للاستفسار: 0568941484 #BLOFYPLAYER #BLOFY",
+      "url": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/videos/blofy-vertical-player-03.mp4"
+    },
+    {
+      "slug": "servers",
+      "filename": "blofy-vertical-servers-04.mp4",
+      "text": "🛠️ حلول سيرفرات IPTV ولوحات توزيع للمتاجر مع BLOFY. اطلب تفاصيل الخدمة: 0568941484 #BLOFY #IPTV",
+      "url": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/videos/blofy-vertical-servers-04.mp4"
+    }
+  ],
+  "videoSchedule": {
+    "startDate": "2026-11-30",
+    "intervalDays": 3,
+    "description": "Publish one original 11.6-second vertical video every third day starting Nov 30, alternating with photo days."
+  }
 }
