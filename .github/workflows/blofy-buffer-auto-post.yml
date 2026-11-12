@@ -18,6 +18,7 @@ on:
         default: check
         options:
           - check
+          - refill
           - post-x-now
           - post-instagram-now
           - post-tiktok-test
@@ -46,5 +47,5 @@ jobs:
       - name: Read Buffer channels or create scheduled posts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
-          RUN_MODE: ${{ (github.event_name == 'push' || github.event.schedule == '20 5 * * *') && 'check' || (github.event.inputs.mode || 'scheduled') }}
+          RUN_MODE: ${{ (github.event_name == 'push' && 'refill') || (github.event.schedule == '20 5 * * *' && 'check') || (github.event.inputs.mode || 'scheduled') }}
         run: python3 marketing/buffer/publish.py --mode "$RUN_MODE"
