@@ -49,5 +49,5 @@ jobs:
       - name: Read Buffer channels, audit status or schedule posts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
-          RUN_MODE: ${{ (github.event_name == 'push' && 'upgrade-x-whatsapp') || (github.event.schedule == '20 5 * * *' && 'check') || (github.event.inputs.mode || 'scheduled') }}
+          RUN_MODE: ${{ (github.event_name == 'push' || github.event.schedule == '20 5 * * *') && 'check' || (github.event.inputs.mode || 'scheduled') }}
         run: python3 marketing/buffer/publish.py --mode "$RUN_MODE"
