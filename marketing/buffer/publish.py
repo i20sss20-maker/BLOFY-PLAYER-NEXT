@@ -191,6 +191,12 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     d = gql(mutation)
     result = d.get("createPost") or {}
     post = result.get("post")
+    if service == "instagram" and not post and "require notification scheduling" in str(result.get("message", "")).lower():
+        print("NOTICE instagram: personal Instagram profiles cannot auto-publish via Buffer.")
+        print("NOTICE instagram: switching to mobile notification scheduling (manual final tap required).")
+        d = gql(mutation.replace("schedulingType: automatic", "schedulingType: notification"))
+        result = d.get("createPost") or {}
+        post = result.get("post")
     if not post or not post.get("id"):
         raise RuntimeError("Buffer refused post: " + str(result.get("message", result)))
     print(f"CREATED {service}: {post['id']} scheduled for {post.get('dueAt')}")
