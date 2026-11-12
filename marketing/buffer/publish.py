@@ -19,7 +19,7 @@ RIYADH = ZoneInfo("Asia/Riyadh")
 UTC = dt.timezone.utc
 SOURCE = pathlib.Path(__file__).with_name("content.json")
 BANK = json.loads(SOURCE.read_text(encoding="utf-8"))
-FREE_QUEUE_GUARD = 9
+FREE_QUEUE_GUARD = 8
 X_SLOT_UTC = (6, 8, 10, 12, 14, 16, 18, 20)
 IMAGE_SLOT_UTC = 14
 
@@ -143,6 +143,39 @@ def check_media(url):
         res.read(256)
 
 
+def planned_x_slots(now):
+    """Upcoming local 09:00–23:00 slots; schedule posts 30 minutes after each."""
+    local_now = now.astimezone(RIYADH)
+    for offset in range(4):
+        day = (local_now + dt.timedelta(days=offset)).date()
+        for hour in range(9, 24, 2):
+            slot = dt.datetime(
+                day.year, day.month, day.day, hour, 0, 0, tzinfo=RIYADH
+            ).astimezone(UTC)
+            if slot > now + dt.timedelta(minutes=10):
+                yield slot
+
+
+def refill_x(ch, now):
+    """Keep up to 8 X posts queued without exhausting Buffer's 10-slot free tier."""
+    posts = recent_posts(ch)
+    queued = sum(
+        str(p.get("status", "")).lower() in ("scheduled", "sending")
+        for p in posts
+    )
+    if queued >= FREE_QUEUE_GUARD:
+        print(f"REFILL twitter: queue already has {queued} pending items.")
+        return
+    created = 0
+    for slot in planned_x_slots(now):
+        if queued >= FREE_QUEUE_GUARD:
+            break
+        if buffer_post(ch, "twitter", slot):
+            created += 1
+            queued += 1
+    print(f"REFILL twitter: created {created} posts; {queued} posts queued.")
+
+
 def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     if (
         service == "instagram"
@@ -151,11 +184,21 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     ):
         print("SKIP instagram: personal account has no Buffer mobile app/device for required notification publishing.")
         print("Fix: connect the Buffer mobile app with notifications, or upgrade Instagram to Professional and reconnect.")
-        return
+        return False
     text, slug = choose_text(service, slot)
     if len(text) > 280 and service == "twitter":
         raise RuntimeError("Generated X post is longer than 280 characters.")
     posts = recent_posts(ch)
+    if service in ("instagram", "tiktok"):
+        # Only one visual campaign post per Saudi-local date, including test posts.
+        local_date = (slot + dt.timedelta(minutes=30)).astimezone(RIYADH).date()
+        for p in posts:
+            if str(p.get("status", "")).lower() not in ("scheduled", "sending", "sent"):
+                continue
+            due = p.get("dueAt")
+            if due and dt.datetime.fromisoformat(due.replace("Z", "+00:00")).astimezone(RIYADH).date() == local_date:
+                print(f"SKIP {service}: a post already exists for {local_date}.")
+                return False
     scheduled = [p for p in posts if str(p.get("status")).lower() == "scheduled"]
     if service == "instagram":
         # Personal Instagram is notification-only. Do not silently build up
@@ -169,13 +212,13 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
         ]
         if uncompleted:
             print(f"SKIP instagram: {len(uncompleted)} past-due mobile notification post(s) need manual publishing.")
-            return
+            return False
     if len(scheduled) >= FREE_QUEUE_GUARD:
         print(f"SKIP {service}: {len(scheduled)} scheduled posts; free queue nearly full.")
-        return
+        return False
     if any((p.get("text") or "") == text for p in posts):
         print(f"SKIP {service}: same content already queued/sent recently.")
-        return
+        return False
 
     if service != "twitter":
         image_url = (BANK["instagramImageUrls"] if service == "instagram" else BANK["imageUrls"])[slug]
@@ -190,20 +233,20 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     # If scheduled workflow was badly delayed, don't post an extra outdated ad.
     if not immediate and service != "twitter" and when > slot + dt.timedelta(hours=2):
         print(f"SKIP {service}: scheduled job ran too late.")
-        return
+        return False
     if not immediate and service == "twitter" and when > slot + dt.timedelta(hours=1, minutes=50):
         print(f"SKIP {service}: scheduled job ran too late.")
-        return
+        return False
     due_at = when.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     # Guard against retrying the same time slot after a queue edit.
     if any(p.get("dueAt", "").startswith(when.strftime("%Y-%m-%dT%H:%M")) for p in posts):
         print(f"SKIP {service}: an existing post already has this publishing time.")
-        return
+        return False
 
     print(f"{service}: target channel {ch.get('displayName') or ch.get('name')}, due {due_at}")
     if dry_run:
         print("DRY RUN: no post created.")
-        return
+        return False
     metadata = ", metadata: { instagram: { type: post, shouldShareToFeed: true } }" if service == "instagram" else ""
     mutation = (
         "mutation { createPost(input: {text: " + qstring(text)
@@ -225,11 +268,12 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
     if not post or not post.get("id"):
         raise RuntimeError("Buffer refused post: " + str(result.get("message", result)))
     print(f"CREATED {service}: {post['id']} scheduled for {post.get('dueAt')}")
+    return True
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("scheduled", "check", "post-x-now", "post-instagram-now", "post-tiktok-test"), default="check")
+    parser.add_argument("--mode", choices=("scheduled", "refill", "check", "post-x-now", "post-instagram-now"), default="check")
     args = parser.parse_args()
     now = dt.datetime.now(UTC)
     channels = channels_by_service()
@@ -263,10 +307,8 @@ def main():
         return
 
     jobs = []
-    if args.mode == "post-tiktok-test":
-        # One future test date after the current Metricool TikTok campaign ends.
-        slot = dt.datetime(2026, 11, 28, 15, 0, tzinfo=UTC)
-        jobs.append(("tiktok", slot))
+    if args.mode == "refill":
+        jobs.append(("twitter-refill", now))
     elif args.mode == "post-instagram-now":
         slot = now.replace(minute=0, second=0, microsecond=0)
         jobs.append(("instagram", slot))
@@ -278,9 +320,8 @@ def main():
         jobs.append(("twitter", slot))
     else:
         # The scheduled GitHub Actions workflow runs on UTC clock hours.
-        if now.hour in X_SLOT_UTC:
-            slot = now.replace(minute=0, second=0, microsecond=0)
-            jobs.append(("twitter", slot))
+        # Refill even if GitHub Actions started in a later UTC hour.
+        jobs.append(("twitter-refill", now))
         if now.hour == IMAGE_SLOT_UTC:
             # Instagram daily. TikTok starts only after the existing Metricool
             # scheduled campaign completes on 27 November 2026.
@@ -291,11 +332,14 @@ def main():
 
     errors = []
     for service, slot in jobs:
-        ch = get_channel(channels, service)
+        ch = get_channel(channels, "twitter" if service == "twitter-refill" else service)
         if not ch:
             continue
         try:
-            buffer_post(ch, service, slot, immediate=(args.mode in ("post-x-now", "post-instagram-now")))
+            if service == "twitter-refill":
+                refill_x(ch, now)
+            else:
+                buffer_post(ch, service, slot, immediate=(args.mode in ("post-x-now", "post-instagram-now")))
         except Exception as ex:
             # A failed channel should not block other channels. Surface all errors.
             print(f"ERROR {service}: {ex}", file=sys.stderr)
