@@ -152,7 +152,9 @@ def planned_x_slots(now):
             slot = dt.datetime(
                 day.year, day.month, day.day, hour, 0, 0, tzinfo=RIYADH
             ).astimezone(UTC)
-            if slot > now + dt.timedelta(minutes=10):
+            # The actual post goes out 30 minutes after its slot.
+            # Include the current slot while it can still be scheduled safely.
+            if slot + dt.timedelta(minutes=30) > now + dt.timedelta(minutes=8):
                 yield slot
 
 
