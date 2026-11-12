@@ -17,6 +17,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
+      - name: Install FFmpeg for rendering
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
       - name: Render original branded promo
         run: |
           ffmpeg -version | head -n 1
