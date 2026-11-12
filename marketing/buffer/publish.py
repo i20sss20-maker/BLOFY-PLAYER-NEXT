@@ -104,9 +104,9 @@ def recent_posts(ch):
     d = gql(
         "query { posts(first: 50, input: {organizationId: "
         + qstring(ch["organizationId"])
-        + ", filter: {status: [scheduled, sent], channelIds: ["
+        + ", filter: {status: [scheduled, sending, sent, error], channelIds: ["
         + qstring(ch["id"])
-        + "]}}) { edges { node { id text dueAt status } } "
+        + "]}}) { edges { node { id text dueAt status sentAt externalLink schedulingType notificationStatus } } "
         + "pageInfo { hasNextPage endCursor } } }"
     )
     edges = ((d.get("posts") or {}).get("edges") or [])
@@ -218,7 +218,21 @@ def main():
             ch = get_channel(channels, service)
             if ch:
                 posts = recent_posts(ch)
-                print(f"{service}: accessible; {len(posts)} recent scheduled/sent posts found.")
+                statuses = {}
+                for post in posts:
+                    state = str(post.get("status", "unknown")).lower()
+                    statuses[state] = statuses.get(state, 0) + 1
+                print(f"{service}: accessible; posts by status: {json.dumps(statuses)}")
+                for post in posts:
+                    state = str(post.get("status", "")).lower()
+                    if state in ("sent", "error", "sending", "scheduled"):
+                        print(
+                            f"POST {service}: id={post.get('id')}, status={state}, "
+                            f"due={post.get('dueAt')}, sentAt={post.get('sentAt')}, "
+                            f"delivery={post.get('schedulingType')}, "
+                            f"notification={post.get('notificationStatus')}, "
+                            f"url={post.get('externalLink') or 'unavailable'}"
+                        )
         print("CHECK OK: no posts created.")
         return
 
