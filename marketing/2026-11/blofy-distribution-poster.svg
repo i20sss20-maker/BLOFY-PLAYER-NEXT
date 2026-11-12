@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#08142f"/><stop offset=".58" stop-color="#111c3c"/><stop offset="1" stop-color="#102d45"/></linearGradient>
+ <linearGradient id="accent" x1="0" x2="1"><stop stop-color="#42e8e0"/><stop offset="1" stop-color="#7e86ff"/></linearGradient>
+ <filter id="glow"><feGaussianBlur stdDeviation="75"/></filter>
+</defs>
+<rect width="1080" height="1920" fill="url(#bg)"/>
+<circle cx="930" cy="290" r="310" fill="#2bbdc5" opacity=".19" filter="url(#glow)"/>
+<circle cx="70" cy="1230" r="260" fill="#6554ff" opacity=".22" filter="url(#glow)"/>
+<rect x="78" y="85" width="924" height="1750" rx="60" fill="#08182d" fill-opacity=".5" stroke="#4fdde5" stroke-opacity=".38" stroke-width="2"/>
+<rect x="140" y="156" width="800" height="9" rx="4" fill="url(#accent)"/>
+<text x="540" y="325" font-family="Arial,sans-serif" font-size="138" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="8">BLOFY</text>
+<text x="540" y="393" font-family="Arial,sans-serif" font-size="38" fill="#81eae7" text-anchor="middle" letter-spacing="5">DISTRIBUTION</text>
+<text x="540" y="600" font-family="Noto Sans Arabic,DejaVu Sans,Arial,sans-serif" font-size="76" font-weight="700" fill="#ffffff" text-anchor="middle" direction="rtl">لوحات توزيع للمتاجر</text>
+<text x="540" y="700" font-family="Noto Sans Arabic,DejaVu Sans,Arial,sans-serif" font-size="51" fill="#bcd1e3" text-anchor="middle" direction="rtl">أكواد IPTV وحلول موزعين</text>
+<rect x="135" y="790" width="810" height="515" rx="34" fill="#183451" fill-opacity=".9" stroke="#2fb0c7" stroke-opacity=".4"/>
+<g font-family="Noto Sans Arabic,DejaVu Sans,Arial,sans-serif" font-size="47" fill="#ffffff" text-anchor="middle" direction="rtl">
+<text x="540" y="900">إصدار وإدارة الأكواد</text>
+<text x="540" y="1020">لوحات توزيع للمتاجر</text>
+<text x="540" y="1140">حلول سيرفرات واشتراكات</text>
+<text x="540" y="1260">تطبيق BLOFY PLAYER</text>
+</g>
+<rect x="152" y="1430" width="776" height="184" rx="45" fill="url(#accent)"/>
+<text x="540" y="1507" font-family="Noto Sans Arabic,DejaVu Sans,Arial,sans-serif" font-size="46" font-weight="700" text-anchor="middle" direction="rtl" fill="#07172b">للاستفسار والطلبات</text>
+<text x="540" y="1583" font-family="Arial,sans-serif" font-size="62" font-weight="700" text-anchor="middle" fill="#07172b">0568941484</text>
+<text x="540" y="1718" font-family="Arial,sans-serif" font-size="38" text-anchor="middle" fill="#9ccada">@i20au</text>
+</svg>
