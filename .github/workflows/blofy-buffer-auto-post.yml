@@ -1,0 +1,41 @@
+name: BLOFY - Free Buffer Auto Publisher
+on:
+  schedule:
+    # Saudi Arabia (UTC+03): X 09:00-23:00 every 2h; Instagram 18:30.
+    # GitHub schedule may start late during heavy load.
+    - cron: '0 6,8,10,12,14,16,18,20 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check (safe), post-x-now, or scheduled'
+        type: choice
+        required: true
+        default: check
+        options:
+          - check
+          - post-x-now
+          - scheduled
+permissions:
+  contents: read
+concurrency:
+  group: blofy-buffer-autopublish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Buffer key configured
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        run: |
+          if [ -z "$BUFFER_API_KEY" ]; then
+            echo "::error::Set BUFFER_API_KEY in Settings > Secrets and variables > Actions before publishing."
+            exit 1
+          fi
+      - name: Read channels or create scheduled posts
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          RUN_MODE: ${{ github.event.inputs.mode || 'scheduled' }}
+        run: python3 marketing/buffer/publish.py --mode "$RUN_MODE"
