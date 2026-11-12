@@ -3,7 +3,7 @@
   "contact": "0568941484",
   "xAccount": "i20au",
   "tikTokAccount": "i.20as",
-  "note": "Public-domain advertising copy for legitimate IPTV and distribution services. Never assert licensed catalog sizes or content access not verified. Media converted to JPEG for TikTok compatibility; Instagram feed assets letterboxed to 1080x1350 (4:5). 72 unique editorial topics rotate over a minimum of nine days; avoid misleading promises and copied media. Assets are now self-hosted in the public BLOFY GitHub repo as immutable-format JPEG files, avoiding publishing-time third-party image conversion.",
+  "note": "Public-domain advertising copy for legitimate IPTV and distribution services. Never assert licensed catalog sizes or content access not verified. Media converted to JPEG for TikTok compatibility; Instagram feed assets letterboxed to 1080x1350 (4:5). 72 unique editorial topics rotate over a minimum of nine days; avoid misleading promises and copied media. Assets are now self-hosted in the public BLOFY GitHub repo as immutable-format JPEG files, avoiding publishing-time third-party image conversion. X/‏Twitter captions now contain a direct WhatsApp click-to-chat link wa.me/966568941484 and industry-specific soft calls to action. No prices or licensing claims are invented.",
   "topics": [
     [
       "عندك متجر وتبحث عن لوحة توزيع أكواد؟",
@@ -499,5 +499,47 @@
     "startDate": "2026-11-30",
     "intervalDays": 3,
     "description": "Publish one original 11.6-second vertical video every third day starting Nov 30, alternating with photo days."
+  },
+  "whatsappUrl": "https://wa.me/966568941484",
+  "xCtas": {
+    "01-iptv-codes": [
+      "ودّك تعرف الخيارات المتاحة لجهازك؟ راسلنا 👇",
+      "اسألنا عن الباقات وطريقة التفعيل 👇",
+      "خلّنا نوضح لك تفاصيل الاشتراك 👇"
+    ],
+    "02-server-solutions": [
+      "عندك متجر؟ خلّنا نوضح لك حلول السيرفرات 👇",
+      "اكتب لنا احتياج متجرك ونشرح لك الخيارات 👇",
+      "تواصل واطلب معلومات حلول التوزيع 👇"
+    ],
+    "03-player-app": [
+      "تبغى تعرف كيف تستخدم BLOFY PLAYER؟ 👇",
+      "اسأل عن التطبيق والأجهزة المدعومة 👇",
+      "تواصل معنا لتعرف طريقة التشغيل 👇"
+    ],
+    "04-retail-partners": [
+      "خلّ إدارة أكواد متجرك أوضح؛ اسألنا 👇",
+      "عندك متجر؟ اطلب تفاصيل لوحة التوزيع 👇",
+      "ودّك تنظّم أكواد العملاء؟ تواصل 👇"
+    ],
+    "05-one-day-trial": [
+      "اسألنا عن توفر تجربة قبل الاشتراك 👇",
+      "عندك استفسار قبل القرار؟ راسلنا 👇"
+    ],
+    "06-distributor": [
+      "تفكر تبدأ التوزيع؟ اسأل عن التفاصيل 👇",
+      "للموزعين: اطلب معلومات لوحة الأكواد 👇",
+      "متجرك يستاهل أدوات مناسبة؛ تواصل 👇"
+    ],
+    "07-contact": [
+      "اختَر الخدمة المناسبة وخذ التفاصيل 👇",
+      "جاهز تسأل عن خدمات BLOFY؟ راسلنا 👇",
+      "اطلب المعلومات التي تحتاجها مباشرة 👇"
+    ],
+    "08-how-to-order": [
+      "راسلنا ونوضح لك الخطوات ببساطة 👇",
+      "خلّنا نساعدك تختار الخدمة المناسبة 👇",
+      "كل استفساراتك عن الطلب على الواتساب 👇"
+    ]
   }
 }
