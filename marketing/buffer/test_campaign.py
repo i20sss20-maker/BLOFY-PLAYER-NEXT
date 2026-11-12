@@ -16,6 +16,8 @@ def verify():
     assert bank["contact"] == "0568941484", "Contact number unexpectedly changed."
     assert bank["xAccount"] == "i20au"
     assert bank["tikTokAccount"] == "i.20as"
+    assert bank["whatsappUrl"] == "https://wa.me/966568941484"
+    assert all(bank["xCtas"].get(slug) for _, _, slug in bank["topics"])
     required = {"01-iptv-codes", "02-server-solutions", "03-player-app",
                 "04-retail-partners", "06-distributor"}
     assert required <= set(bank["imageUrls"])
@@ -30,7 +32,9 @@ def verify():
         for hour in range(9, 24, 2):
             text, slug = publish.choose_text("twitter", local_day.replace(hour=hour))
             assert 65 <= len(text) <= 280, f"Invalid X length: {len(text)}"
-            assert "0568941484" in text and "#BLOFY" in text
+            assert bank["whatsappUrl"] in text and "#BLOFY" in text
+            assert "📲 واتساب" in text
+            assert bank["whatsappUrl"] not in publish.legacy_x_text(local_day.replace(hour=hour))
             assert slug in bank["imageUrls"]
             x_texts.append(text)
     assert len(x_texts) == len(set(x_texts)), "Repeated X text in the 45-day test."
