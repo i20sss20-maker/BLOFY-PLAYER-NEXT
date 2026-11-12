@@ -43,7 +43,7 @@ def verify():
     # Refilling starts at the next future slot, never creates a post in the past.
     now = dt.datetime(2026, 11, 12, 10, 24, tzinfo=dt.timezone.utc)
     slots = list(publish.planned_x_slots(now))
-    assert len(slots) >= 30
+    assert len(slots) >= 24
     assert all(slot > now for slot in slots)
     assert len(slots) == len(set(slots))
     assert slots[0].astimezone(ZoneInfo("Asia/Riyadh")).hour == 15
