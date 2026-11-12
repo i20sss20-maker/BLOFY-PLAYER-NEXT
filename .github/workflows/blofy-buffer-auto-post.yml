@@ -5,7 +5,7 @@ on:
       - '.github/workflows/blofy-buffer-auto-post.yml'
   schedule:
     # Saudi Arabia (UTC+03): X 09:00-23:00 every 2h; Instagram 18:30.
-    # GitHub schedule may start late during heavy load.
+    # GitHub schedule may start late during heavy load; image posts use Buffer media URLs.
     - cron: '0 6,8,10,12,14,16,18,20 * * *'
   workflow_dispatch:
     inputs:
