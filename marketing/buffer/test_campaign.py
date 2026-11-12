@@ -47,6 +47,10 @@ def verify():
     assert all(slot > now for slot in slots)
     assert len(slots) == len(set(slots))
     assert slots[0].astimezone(ZoneInfo("Asia/Riyadh")).hour == 15
+    morning = dt.datetime(2026, 11, 13, 6, 10, tzinfo=dt.timezone.utc)
+    morning_slot = next(publish.planned_x_slots(morning))
+    assert morning_slot.astimezone(ZoneInfo("Asia/Riyadh")).hour == 9
+    assert morning_slot + dt.timedelta(minutes=30) > morning
     assert publish.FREE_QUEUE_GUARD == 8, "Leave room for two manual posts in Buffer Free."
     print("PASS: 360 unique X posts, next-slot refill, native media and 30-day image campaign.")
 
