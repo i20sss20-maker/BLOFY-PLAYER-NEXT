@@ -56,3 +56,12 @@ GitHub Actions checks Buffer post statuses at **08:20 Riyadh time every day** an
 - TikTok/Instagram scheduling now skips a day if that channel already has a scheduled or sent post for the same Saudi-local calendar date; this prevents an extra TikTok Buffer post on November 28, for which an advance test was already queued.
 - Workflow changes trigger a read-only `check`; scheduled runs and intentional manual `refill` mode create new posts.
 - Follow X automation rules: avoid excessive frequency and near-duplicate promotional content. Reduce campaign volume if reach falls or X warns about spam.
+
+## 2026-11-12: WhatsApp links and improved X advertisements
+
+- **Click-to-chat URL:** `https://wa.me/966568941484` (Saudi mobile `0568941484`, in international dialing format). The link opens an incoming WhatsApp chat; customers choose whether to send a message.
+- New X ads contain contextual calls to action for BLOFY codes, reseller panels, streaming servers or BLOFY PLAYER, followed by the direct WhatsApp URL.
+- Used Buffer's `editPost` mutation on **eight pending X posts** to replace the older bare-phone copy while **preserving their original publication times**.
+- Confirmed through a read-only Buffer audit that **8 of 8 queued X posts** have the WhatsApp URL.
+- Existing posts that have already been published are unchanged. Manual X posts not matching the original BLOFY template are intentionally excluded from the migration.
+- Regression-tested all 360 sample X captions for `#BLOFY`, the clickable WhatsApp link and a maximum of 280 Python characters per post.
