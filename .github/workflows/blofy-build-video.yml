@@ -29,7 +29,7 @@ jobs:
         run: |
           git config user.name "blofy-marketing-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add marketing/videos/blofy-vertical-distribution-01.mp4
+          git add marketing/videos/*.mp4
           if git diff --cached --quiet; then
             echo "Video unchanged."
             exit 0
