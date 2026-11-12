@@ -356,7 +356,7 @@ def main():
         report = os.environ.get("GITHUB_STEP_SUMMARY")
         if report:
             with open(report, "a", encoding="utf-8") as output:
-                output.write("\\n".join(summary) + "\\n")
+                output.write("\n".join(summary) + "\n")
         print("CHECK OK: no posts created.")
         return
 
