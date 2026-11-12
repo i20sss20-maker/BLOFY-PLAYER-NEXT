@@ -384,6 +384,16 @@ def main():
                     state = str(post.get("status", "unknown")).lower()
                     statuses[state] = statuses.get(state, 0) + 1
                 print(f"{service}: accessible; posts by status: {json.dumps(statuses)}")
+                if service == "twitter":
+                    pending_x = [p for p in posts if p.get("status") == "scheduled"]
+                    linked_x = [p for p in pending_x if BANK["whatsappUrl"] in (p.get("text") or "")]
+                    print(f"X WHATSAPP LINK COVERAGE: {len(linked_x)}/{len(pending_x)} queued posts")
+                    summary.append(
+                        f"**واتساب في التغريدات:** {len(linked_x)}/{len(pending_x)} مجدولة "
+                        "تحتوي على الرابط المباشر."
+                    )
+                    for sample in linked_x[:2]:
+                        print(f"X AD COPY ({sample.get('dueAt')}): {sample.get('text')}")
                 summary.append(
                     f"| {service} | {statuses.get('scheduled', 0)} | "
                     f"{statuses.get('sent', 0)} | {statuses.get('error', 0)} |"
