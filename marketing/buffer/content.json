@@ -3,7 +3,7 @@
   "contact": "0568941484",
   "xAccount": "i20au",
   "tikTokAccount": "i.20as",
-  "note": "Public-domain advertising copy for legitimate IPTV and distribution services. Never assert licensed catalog sizes or content access not verified.",
+  "note": "Public-domain advertising copy for legitimate IPTV and distribution services. Never assert licensed catalog sizes or content access not verified. Media converted to JPEG for TikTok compatibility; Instagram feed assets letterboxed to 1080x1350 (4:5).",
   "topics": [
     [
       "عندك متجر وتبحث عن لوحة توزيع أكواد؟",
@@ -199,13 +199,23 @@
     ]
   ],
   "imageUrls": {
-    "01-iptv-codes": "https://static.metricool.com/planner/202611/8052229-file-9899400045144272724.png",
-    "02-server-solutions": "https://static.metricool.com/planner/202611/8052229-file-7837641343134304731.png",
-    "03-player-app": "https://static.metricool.com/planner/202611/8052229-file-17292992014271797013.png",
-    "04-retail-partners": "https://static.metricool.com/planner/202611/8052229-file-2392173844350238965.png",
-    "05-one-day-trial": "https://static.metricool.com/planner/202611/8052229-file-5482331314532567398.png",
-    "06-distributor": "https://static.metricool.com/planner/202611/8052229-file-1399341527048583660.png",
-    "07-contact": "https://static.metricool.com/planner/202611/8052229-file-9788099205682070917.png",
-    "08-how-to-order": "https://static.metricool.com/planner/202611/8052229-file-18203172237345266758.png"
+    "01-iptv-codes": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-9899400045144272724.png&output=jpg&q=85&w=1080",
+    "02-server-solutions": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-7837641343134304731.png&output=jpg&q=85&w=1080",
+    "03-player-app": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-17292992014271797013.png&output=jpg&q=85&w=1080",
+    "04-retail-partners": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-2392173844350238965.png&output=jpg&q=85&w=1080",
+    "05-one-day-trial": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-5482331314532567398.png&output=jpg&q=85&w=1080",
+    "06-distributor": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-1399341527048583660.png&output=jpg&q=85&w=1080",
+    "07-contact": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-9788099205682070917.png&output=jpg&q=85&w=1080",
+    "08-how-to-order": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-18203172237345266758.png&output=jpg&q=85&w=1080"
+  },
+  "instagramImageUrls": {
+    "01-iptv-codes": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-9899400045144272724.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
+    "02-server-solutions": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-7837641343134304731.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
+    "03-player-app": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-17292992014271797013.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
+    "04-retail-partners": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-2392173844350238965.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
+    "05-one-day-trial": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-5482331314532567398.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
+    "06-distributor": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-1399341527048583660.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
+    "07-contact": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-9788099205682070917.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
+    "08-how-to-order": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-18203172237345266758.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225"
   }
 }
