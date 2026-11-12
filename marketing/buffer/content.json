@@ -3,7 +3,7 @@
   "contact": "0568941484",
   "xAccount": "i20au",
   "tikTokAccount": "i.20as",
-  "note": "Public-domain advertising copy for legitimate IPTV and distribution services. Never assert licensed catalog sizes or content access not verified. Media converted to JPEG for TikTok compatibility; Instagram feed assets letterboxed to 1080x1350 (4:5). 72 unique editorial topics rotate over a minimum of nine days; avoid misleading promises and copied media.",
+  "note": "Public-domain advertising copy for legitimate IPTV and distribution services. Never assert licensed catalog sizes or content access not verified. Media converted to JPEG for TikTok compatibility; Instagram feed assets letterboxed to 1080x1350 (4:5). 72 unique editorial topics rotate over a minimum of nine days; avoid misleading promises and copied media. Assets are now self-hosted in the public BLOFY GitHub repo as immutable-format JPEG files, avoiding publishing-time third-party image conversion.",
   "topics": [
     [
       "عندك متجر وتبحث عن لوحة توزيع أكواد؟",
@@ -443,24 +443,24 @@
     ]
   ],
   "imageUrls": {
-    "01-iptv-codes": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-9899400045144272724.png&output=jpg&q=85&w=1080",
-    "02-server-solutions": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-7837641343134304731.png&output=jpg&q=85&w=1080",
-    "03-player-app": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-17292992014271797013.png&output=jpg&q=85&w=1080",
-    "04-retail-partners": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-2392173844350238965.png&output=jpg&q=85&w=1080",
-    "05-one-day-trial": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-5482331314532567398.png&output=jpg&q=85&w=1080",
-    "06-distributor": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-1399341527048583660.png&output=jpg&q=85&w=1080",
-    "07-contact": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-9788099205682070917.png&output=jpg&q=85&w=1080",
-    "08-how-to-order": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-18203172237345266758.png&output=jpg&q=85&w=1080"
+    "01-iptv-codes": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/tiktok/01-iptv-codes.jpg",
+    "02-server-solutions": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/tiktok/02-server-solutions.jpg",
+    "03-player-app": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/tiktok/03-player-app.jpg",
+    "04-retail-partners": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/tiktok/04-retail-partners.jpg",
+    "05-one-day-trial": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/tiktok/05-one-day-trial.jpg",
+    "06-distributor": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/tiktok/06-distributor.jpg",
+    "07-contact": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/tiktok/07-contact.jpg",
+    "08-how-to-order": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/tiktok/08-how-to-order.jpg"
   },
   "instagramImageUrls": {
-    "01-iptv-codes": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-9899400045144272724.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
-    "02-server-solutions": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-7837641343134304731.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
-    "03-player-app": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-17292992014271797013.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
-    "04-retail-partners": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-2392173844350238965.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
-    "05-one-day-trial": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-5482331314532567398.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
-    "06-distributor": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-1399341527048583660.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
-    "07-contact": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-9788099205682070917.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225",
-    "08-how-to-order": "https://wsrv.nl/?url=https%3A%2F%2Fstatic.metricool.com%2Fplanner%2F202611%2F8052229-file-18203172237345266758.png&output=jpg&q=85&w=1080&h=1350&fit=contain&cbg=081225"
+    "01-iptv-codes": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/instagram/01-iptv-codes.jpg",
+    "02-server-solutions": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/instagram/02-server-solutions.jpg",
+    "03-player-app": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/instagram/03-player-app.jpg",
+    "04-retail-partners": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/instagram/04-retail-partners.jpg",
+    "05-one-day-trial": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/instagram/05-one-day-trial.jpg",
+    "06-distributor": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/instagram/06-distributor.jpg",
+    "07-contact": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/instagram/07-contact.jpg",
+    "08-how-to-order": "https://raw.githubusercontent.com/i20sss20-maker/BLOFY-PLAYER-NEXT/main/marketing/images/instagram/08-how-to-order.jpg"
   },
   "hashtagPairs": [
     "#BLOFY #IPTV",
