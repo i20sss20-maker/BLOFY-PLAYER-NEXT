@@ -133,12 +133,29 @@ def choose_text(service, slot):
     return text, slug
 
 
-def check_media(url):
+def media_for_post(service, slot):
+    """Return text, visual media URL and type; use a video every third TikTok day."""
+    text, slug = choose_text(service, slot)
+    if service == "twitter":
+        return text, None, "text"
+    day = slot.astimezone(RIYADH).date()
+    config = BANK["videoSchedule"]
+    begin = dt.date.fromisoformat(config["startDate"])
+    days_after = (day - begin).days
+    if service == "tiktok" and days_after >= 0 and days_after % int(config["intervalDays"]) == 0:
+        creative = BANK["videoUrls"][(days_after // int(config["intervalDays"])) % len(BANK["videoUrls"])]
+        return creative["text"], creative["url"], "video"
+    urls = BANK["instagramImageUrls"] if service == "instagram" else BANK["imageUrls"]
+    return text, urls[slug], "image"
+
+
+def check_media(url, media_type="image"):
     req = urllib.request.Request(url, headers={"User-Agent": "BLOFY-MediaCheck/1.0"})
     with urllib.request.urlopen(req, timeout=18) as res:
         mime = res.headers.get("Content-Type", "").lower()
-        if res.status != 200 or not mime.startswith("image/"):
-            raise RuntimeError("Image URL did not return a public image (" + mime + ").")
+        good_type = mime.startswith("image/") if media_type == "image" else (mime.startswith("video/") or mime == "application/octet-stream")
+        if res.status != 200 or not good_type:
+            raise RuntimeError(media_type + " URL did not return expected public media (" + mime + ").")
         # Do not download full media file here.
         res.read(256)
 
@@ -187,7 +204,7 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
         print("SKIP instagram: personal account has no Buffer mobile app/device for required notification publishing.")
         print("Fix: connect the Buffer mobile app with notifications, or upgrade Instagram to Professional and reconnect.")
         return False
-    text, slug = choose_text(service, slot)
+    text, media_url, media_type = media_for_post(service, slot)
     if len(text) > 280 and service == "twitter":
         raise RuntimeError("Generated X post is longer than 280 characters.")
     posts = recent_posts(ch)
@@ -222,11 +239,13 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
         print(f"SKIP {service}: same content already queued/sent recently.")
         return False
 
-    if service != "twitter":
-        image_url = (BANK["instagramImageUrls"] if service == "instagram" else BANK["imageUrls"])[slug]
+    if media_type != "text":
         if not dry_run:
-            check_media(image_url)
-        asset = ", assets: [{image: {url: " + qstring(image_url) + "}}]"
+            check_media(media_url, media_type)
+        if media_type == "video":
+            asset = ", assets: [{video: {url: " + qstring(media_url) + ", metadata: {thumbnailOffset: 2000}}}]"
+        else:
+            asset = ", assets: [{image: {url: " + qstring(media_url) + "}}]"
     else:
         asset = ""
 
@@ -275,7 +294,7 @@ def buffer_post(ch, service, slot, dry_run=False, immediate=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("scheduled", "refill", "check", "post-x-now", "post-instagram-now"), default="check")
+    parser.add_argument("--mode", choices=("scheduled", "refill", "check", "post-x-now", "post-instagram-now", "post-tiktok-video-test"), default="check")
     args = parser.parse_args()
     now = dt.datetime.now(UTC)
     channels = channels_by_service()
@@ -309,7 +328,11 @@ def main():
         return
 
     jobs = []
-    if args.mode == "refill":
+    if args.mode == "post-tiktok-video-test":
+        # One date after the current Metricool TikTok campaign ends, with no other Buffer post.
+        slot = dt.datetime(2026, 11, 30, 15, 0, tzinfo=UTC)
+        jobs.append(("tiktok", slot))
+    elif args.mode == "refill":
         jobs.append(("twitter-refill", now))
     elif args.mode == "post-instagram-now":
         slot = now.replace(minute=0, second=0, microsecond=0)
