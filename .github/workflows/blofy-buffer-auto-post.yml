@@ -4,7 +4,7 @@ on:
     paths:
       - '.github/workflows/blofy-buffer-auto-post.yml'
   schedule:
-    # X AUTOMATION EMERGENCY STOPPED due to X spam account lock; cron for TikTok only.
+    # X AUTO-POSTING DISABLED due to locked X account; scheduled job runs TikTok only.
     # GitHub schedule may start late; X queue is refilled with unique scheduled posts.
     - cron: '0 6,10,14,18 * * *'
     # Daily read-only audit of actual Buffer publication statuses and errors, 08:20 Saudi time.
@@ -12,19 +12,15 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'check (safe), post-x-now, or scheduled'
+        description: 'check (read only), emergency-stop-x, or scheduled (X disabled)'
         type: choice
         required: true
         default: check
         options:
           - check
           - emergency-stop-x
-          - upgrade-x-whatsapp
-          - refill
-          - post-x-now
           - post-instagram-now
           - post-tiktok-video-test
-          - post-tiktok-test
           - scheduled
 permissions:
   contents: read
@@ -51,5 +47,5 @@ jobs:
         env:
           BLOFY_X_AUTOPOST_ENABLED: "false"
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
-          RUN_MODE: ${{ (github.event_name == 'push' && 'emergency-stop-x') || (github.event.schedule == '20 5 * * *' && 'check') || (github.event.inputs.mode || 'scheduled') }}
+          RUN_MODE: ${{ (github.event_name == 'push' || github.event.schedule == '20 5 * * *') && 'check' || (github.event.inputs.mode || 'scheduled') }}
         run: python3 marketing/buffer/publish.py --mode "$RUN_MODE"
