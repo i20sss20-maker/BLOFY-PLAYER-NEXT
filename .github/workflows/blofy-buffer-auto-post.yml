@@ -1,5 +1,8 @@
 name: BLOFY - Free Buffer Auto Publisher
 on:
+  push:
+    paths:
+      - '.github/workflows/blofy-buffer-auto-post.yml'
   schedule:
     # Saudi Arabia (UTC+03): X 09:00-23:00 every 2h; Instagram 18:30.
     # GitHub schedule may start late during heavy load.
@@ -37,5 +40,5 @@ jobs:
       - name: Read channels or create scheduled posts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
-          RUN_MODE: ${{ github.event.inputs.mode || 'scheduled' }}
+          RUN_MODE: ${{ github.event_name == 'push' && 'check' || (github.event.inputs.mode || 'scheduled') }}
         run: python3 marketing/buffer/publish.py --mode "$RUN_MODE"
